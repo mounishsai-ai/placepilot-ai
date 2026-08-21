@@ -58,6 +58,7 @@ export const drivesAPI = {
 export const studentsAPI = {
   list: (params?: object) => api.get("/api/students/", { params }),
   get: (id: string) => api.get(`/api/students/${id}`),
+  getMe: () => api.get("/api/students/me"),          // resolves JWT user → Student record
   create: (data: object) => api.post("/api/students/", data),
   update: (id: string, data: object) => api.put(`/api/students/${id}`, data),
   getSchedule: (id: string) => api.get(`/api/students/${id}/schedule`),

@@ -51,31 +51,36 @@ export default function StudentDashboard() {
 
   useStudentWebSocket(studentId);
 
-  const fetchData = useCallback(async (id: string) => {
+  const fetchData = useCallback(async () => {
     try {
-      const [profileRes, schedRes, matchRes, notifRes] = await Promise.all([
-        studentsAPI.get(id),
-        studentsAPI.getSchedule(id),
-        studentsAPI.getMatches(id),
-        notificationsAPI.getStudentNotifications(id),
+      // /me resolves logged-in user → Student record by email
+      const meRes = await studentsAPI.getMe();
+      const me = meRes.data;
+      setStudentId(me.id);
+      setProfile(me);
+      setMatches(me.matches ?? []);
+
+      // Fetch schedule + notifications separately using resolved student ID
+      const [schedRes, notifRes] = await Promise.all([
+        studentsAPI.getSchedule(me.id),
+        notificationsAPI.getStudentNotifications(me.id),
       ]);
-      setProfile(profileRes.data);
       setSchedule(schedRes.data);
-      setMatches(matchRes.data);
       setNotifications(notifRes.data);
-    } catch {
-      toast.error("Failed to load your profile");
+    } catch (err: unknown) {
+      const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
+      if (msg?.includes("No student record")) {
+        toast.error("Your student profile isn't set up yet. Contact the TPO.");
+      } else {
+        toast.error("Failed to load your profile");
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // For demo: use user id as student id
-    if (user?.id) {
-      setStudentId(user.id);
-      fetchData(user.id);
-    }
+    if (user) fetchData();
   }, [user, fetchData]);
 
   const readiness = Number((profile as Record<string,unknown>)?.placement_readiness_score ?? 72);
@@ -196,7 +201,7 @@ export default function StudentDashboard() {
                     </div>
                     <div className="text-right">
                       <div className="text-blue-400 font-bold text-sm">
-                        {Math.round(Number(m.score) * 100)}%
+                        {Math.round(Number(m.score))}%
                       </div>
                       <div className="text-white/30 text-[10px]">match</div>
                     </div>

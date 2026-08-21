@@ -39,6 +39,38 @@ async def seed():
             db.add(u)
         logger.info("Added default users")
 
+        # ── Demo student record (linked to student@college.edu login) ─────────
+        demo_student = Student(
+            id="demo_student_01",
+            roll_no="2024CS0001",
+            name="Arjun Sharma",
+            email="student@college.edu",   # MUST match User.email above
+            phone="+91-9876543210",
+            branch="CSE",
+            batch=2024,
+            cgpa=8.7,
+            backlogs_active=0,
+            backlogs_historical=0,
+            attendance_pct=92.5,
+            linkedin_url="https://linkedin.com/in/arjun-sharma",
+            github_url="https://github.com/arjun-sharma",
+            placement_readiness_score=84,
+            skills_summary="Full-stack developer with expertise in Python, React, and ML",
+        )
+        db.add(demo_student)
+        for skill_data in [
+            ("Python", "expert", 2.5), ("React", "expert", 1.5),
+            ("Machine Learning", "intermediate", 1.0), ("SQL", "expert", 2.0),
+            ("Docker", "intermediate", 0.8), ("FastAPI", "intermediate", 1.2),
+            ("TensorFlow", "beginner", 0.5), ("TypeScript", "intermediate", 1.0),
+        ]:
+            db.add(StudentSkill(
+                student_id="demo_student_01",
+                skill=skill_data[0], proficiency=skill_data[1],
+                years_experience=skill_data[2],
+            ))
+        logger.info("Added demo student (student@college.edu)")
+
         # ── Companies ────────────────────────────────────────────────────────
         for c in data["companies"]:
             company = Company(
