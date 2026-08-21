@@ -1,8 +1,12 @@
 """
 Matcher Agent — embeds student profiles + JD, finds top-k matches via ChromaDB.
+Uses Google embeddings with small batches + retry. Falls back to TF-IDF if embedding fails.
 """
+import asyncio
 import json
+import math
 from typing import Any
+from collections import Counter
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -15,6 +19,7 @@ def get_embedder():
     return GoogleGenerativeAIEmbeddings(
         model=settings.EMBEDDING_MODEL,
         google_api_key=settings.GEMINI_API_KEY,
+        request_options={"timeout": 30},   # 30s per request, not 60s
     )
 
 
@@ -49,6 +54,67 @@ def _jd_to_text(jd_parsed: dict) -> str:
     )
 
 
+# ─── TF-IDF Fallback ─────────────────────────────────────────────────────────
+
+def _tokenize(text: str) -> list[str]:
+    return text.lower().split()
+
+def _tfidf_score(doc_tokens: list[str], query_tokens: list[str]) -> float:
+    """Simple cosine similarity using TF overlap."""
+    if not doc_tokens or not query_tokens:
+        return 0.0
+    query_set = set(query_tokens)
+    doc_counter = Counter(doc_tokens)
+    overlap = sum(doc_counter[t] for t in query_set if t in doc_counter)
+    norm = math.sqrt(len(doc_tokens)) * math.sqrt(len(query_tokens))
+    return overlap / norm if norm > 0 else 0.0
+
+def _fallback_match(students: list[dict], jd_parsed: dict, top_k: int) -> list[dict]:
+    """TF-IDF keyword matching — used when Google embeddings fail/timeout."""
+    logger.warning("Using TF-IDF fallback for matching (Google embeddings unavailable)")
+    jd_text = _jd_to_text(jd_parsed)
+    jd_tokens = _tokenize(jd_text)
+
+    scored = []
+    for s in students:
+        doc_text = _student_to_text(s)
+        score = _tfidf_score(_tokenize(doc_text), jd_tokens)
+        # Bonus for CGPA
+        cgpa = float(s.get("cgpa", 0))
+        score += (cgpa / 10) * 0.15
+        scored.append((s, score))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [
+        {
+            "student_id": s["id"],
+            "name": s.get("name", ""),
+            "score": round(score, 4),
+            "rank": i + 1,
+            "explanation": None,
+        }
+        for i, (s, score) in enumerate(scored[:top_k])
+    ]
+
+
+# ─── Embed with retry + small batches ────────────────────────────────────────
+
+async def _embed_batch_with_retry(embedder, texts: list[str], retries: int = 2) -> list:
+    """Embed a small batch with retry on timeout."""
+    for attempt in range(retries + 1):
+        try:
+            return await embedder.aembed_documents(texts)
+        except Exception as e:
+            if attempt < retries:
+                wait = 2 ** attempt  # 1s, 2s backoff
+                logger.warning(f"Embedding attempt {attempt+1} failed: {e}. Retrying in {wait}s...")
+                await asyncio.sleep(wait)
+            else:
+                raise
+
+
+# ─── Main Functions ───────────────────────────────────────────────────────────
+
 async def index_students_for_drive(
     drive_id: str,
     students: list[dict],
@@ -81,33 +147,48 @@ async def index_students_for_drive(
         for s in students
     ]
 
-    # Batch embed (ChromaDB handles embedding internally via embedding function,
-    # but we use Google embeddings directly)
-    batch_size = 50
-    for i in range(0, len(texts), batch_size):
-        batch_texts = texts[i : i + batch_size]
-        batch_ids = ids[i : i + batch_size]
-        batch_meta = metadatas[i : i + batch_size]
+    # Small batches of 5 to avoid 60s API timeout
+    BATCH_SIZE = 5
+    embedded_ok = True
+    for i in range(0, len(texts), BATCH_SIZE):
+        batch_texts = texts[i: i + BATCH_SIZE]
+        batch_ids = ids[i: i + BATCH_SIZE]
+        batch_meta = metadatas[i: i + BATCH_SIZE]
 
-        embeddings = await embedder.aembed_documents(batch_texts)
-        collection.add(
-            ids=batch_ids,
-            embeddings=embeddings,
-            documents=batch_texts,
-            metadatas=batch_meta,
-        )
+        try:
+            embeddings = await _embed_batch_with_retry(embedder, batch_texts)
+            collection.add(
+                ids=batch_ids,
+                embeddings=embeddings,
+                documents=batch_texts,
+                metadatas=batch_meta,
+            )
+            logger.debug(f"Embedded batch {i//BATCH_SIZE + 1}/{math.ceil(len(texts)/BATCH_SIZE)}")
+            # Small delay between batches to avoid rate limits
+            if i + BATCH_SIZE < len(texts):
+                await asyncio.sleep(0.3)
+        except Exception as e:
+            logger.error(f"Embedding batch {i}-{i+BATCH_SIZE} failed permanently: {e}")
+            embedded_ok = False
+            break
 
-    logger.info(f"Indexed {len(students)} students for drive {drive_id}")
+    if embedded_ok:
+        logger.info(f"Indexed {len(students)} students for drive {drive_id} via Google embeddings")
+    else:
+        logger.warning(f"Partial index for drive {drive_id} — will use TF-IDF fallback")
+
+    return embedded_ok
 
 
 async def match_students_to_jd(
     drive_id: str,
     jd_parsed: dict,
     top_k: int = 50,
-    generate_explanations: bool = True,
+    students: list[dict] | None = None,   # needed for TF-IDF fallback
 ) -> list[dict[str, Any]]:
     """
     Query ChromaDB with the JD embedding and return ranked student matches.
+    Falls back to TF-IDF keyword matching if embeddings unavailable.
     """
     client = get_chroma_client()
     collection_name = f"drive_{drive_id}_students"
@@ -116,17 +197,35 @@ async def match_students_to_jd(
         collection = client.get_collection(collection_name)
     except Exception as e:
         logger.error(f"Collection {collection_name} not found: {e}")
+        if students:
+            return _fallback_match(students, jd_parsed, top_k)
+        return []
+
+    if collection.count() == 0:
+        logger.warning(f"Empty collection for drive {drive_id}, using TF-IDF fallback")
+        if students:
+            return _fallback_match(students, jd_parsed, top_k)
         return []
 
     embedder = get_embedder()
     jd_text = _jd_to_text(jd_parsed)
-    jd_embedding = await embedder.aembed_query(jd_text)
 
-    results = collection.query(
-        query_embeddings=[jd_embedding],
-        n_results=min(top_k, collection.count()),
-        include=["distances", "metadatas", "documents"],
-    )
+    try:
+        jd_embedding = await _embed_batch_with_retry(
+            embedder,
+            [jd_text],   # embed as single document then use as query
+        )
+        # Use first embedding as query
+        results = collection.query(
+            query_embeddings=[jd_embedding[0]],
+            n_results=min(top_k, collection.count()),
+            include=["distances", "metadatas", "documents"],
+        )
+    except Exception as e:
+        logger.error(f"JD embedding failed: {e}. Using TF-IDF fallback.")
+        if students:
+            return _fallback_match(students, jd_parsed, top_k)
+        return []
 
     matches = []
     for i, (doc, dist, meta) in enumerate(
@@ -159,12 +258,15 @@ async def generate_all_explanations(
 ) -> list[dict]:
     """
     Enrich top-N matches with AI-generated explanations.
-    Only explain top 20 to save API quota.
+    Only explain top 5 to save API quota (was 20).
     """
-    top_matches = matches[:20]
+    top_matches = matches[:5]
     for match in top_matches:
         student = students_by_id.get(match["student_id"])
         if student:
-            explanation = await explain_match(student, jd_parsed, match["score"])
-            match["explanation"] = explanation
+            try:
+                explanation = await explain_match(student, jd_parsed, match["score"])
+                match["explanation"] = explanation
+            except Exception as e:
+                logger.warning(f"Failed to explain match for {match['student_id']}: {e}")
     return matches
