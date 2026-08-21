@@ -91,8 +91,11 @@ async def node_match_candidates(state: PlacementState) -> dict:
     jd_parsed = state["jd_parsed"]
     drive_id = state["drive_id"]
 
-    await index_students_for_drive(drive_id, eligible)
-    matches = await match_students_to_jd(drive_id, jd_parsed, top_k=50)
+    embedded_ok = await index_students_for_drive(drive_id, eligible)
+    matches = await match_students_to_jd(
+        drive_id, jd_parsed, top_k=50,
+        students=eligible,          # needed for TF-IDF fallback
+    )
 
     students_by_id = {s["id"]: s for s in eligible}
     matches = await generate_all_explanations(matches, students_by_id, jd_parsed)
