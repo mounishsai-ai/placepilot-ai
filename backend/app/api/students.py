@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 import os, uuid
 
 from app.database import get_db
-from app.models import Student, StudentSkill, InterviewSlot, MatchScore, UserRole
+from app.models import Student, StudentSkill, InterviewSlot, MatchScore, UserRole, User
 from app.api.auth import get_current_user, require_role
 from app.config import settings
 
@@ -49,6 +49,68 @@ class UpdateStudentRequest(BaseModel):
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
+
+@router.get("/me")
+async def get_my_profile(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the Student record linked to the currently logged-in user (by email)."""
+    result = await db.execute(
+        select(Student)
+        .options(selectinload(Student.skills), selectinload(Student.interview_slots))
+        .where(Student.email == current_user.email)
+    )
+    student = result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No student record found for your account. Please contact the TPO."
+        )
+
+    # Also fetch matches for this student
+    matches_result = await db.execute(
+        select(MatchScore)
+        .options(selectinload(MatchScore.drive))
+        .where(MatchScore.student_id == student.id)
+        .order_by(MatchScore.score.desc())
+        .limit(10)
+    )
+    matches = matches_result.scalars().all()
+
+    return {
+        "id": student.id,
+        "roll_no": student.roll_no,
+        "name": student.name,
+        "email": student.email,
+        "phone": student.phone,
+        "branch": student.branch,
+        "batch": student.batch,
+        "cgpa": student.cgpa,
+        "backlogs_active": student.backlogs_active,
+        "backlogs_historical": student.backlogs_historical,
+        "attendance_pct": student.attendance_pct,
+        "resume_url": student.resume_url,
+        "linkedin_url": student.linkedin_url,
+        "github_url": student.github_url,
+        "placement_readiness_score": student.placement_readiness_score,
+        "skills_summary": student.skills_summary,
+        "skills": [
+            {"skill": sk.skill, "proficiency": sk.proficiency, "years": sk.years_experience}
+            for sk in student.skills
+        ],
+        "matches": [
+            {
+                "drive_id": m.drive_id,
+                "role": m.drive.jd_parsed.get("role") if m.drive and m.drive.jd_parsed else None,
+                "score": round(m.score * 100, 1),
+                "rank": m.rank,
+                "shortlisted": m.shortlisted,
+            }
+            for m in matches
+        ],
+    }
+
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_student(

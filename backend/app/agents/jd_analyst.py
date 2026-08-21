@@ -32,9 +32,11 @@ Extract the following fields:
 """
 
 
-def get_llm():
+def get_llm(pro: bool = False):
+    """Use pro model for JD parsing (quality critical), lite for everything else."""
+    model = settings.GEMINI_MODEL_PRO if pro else settings.GEMINI_MODEL
     return ChatGoogleGenerativeAI(
-        model=settings.GEMINI_MODEL,
+        model=model,
         google_api_key=settings.GEMINI_API_KEY,
         temperature=0.1,
     )
@@ -45,7 +47,7 @@ async def analyze_jd(jd_text: str) -> dict[str, Any]:
     Parse a raw JD text and return a structured JSON dict.
     Falls back to a rule-based extractor if LLM fails.
     """
-    llm = get_llm()
+    llm = get_llm(pro=True)  # JD parsing = quality critical → use pro model
     messages = [
         SystemMessage(content=JD_SYSTEM_PROMPT),
         HumanMessage(content=f"Extract information from this Job Description:\n\n{jd_text}"),

@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-pro"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"      # 500 RPD, 15 RPM — primary workhorse
+    GEMINI_MODEL_PRO: str = "gemini-3.6-flash"           # 20 RPD — high-quality JD analysis only
     EMBEDDING_MODEL: str = "models/embedding-001"
 
     CHROMA_PERSIST_DIR: str = "./chroma_db"

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
-from app.database import get_db
+from app.database import get_db, async_session_factory
 from app.models import (
     PlacementDrive, DriveStatus, Company, EligibilityRule,
     EligibilityResult, MatchScore, Student, AgentEvent, UserRole
@@ -96,54 +96,73 @@ async def _load_rules(drive_id: str, db: AsyncSession) -> list[dict]:
 
 # ─── Background Pipeline ──────────────────────────────────────────────────────
 
-async def _run_pipeline_bg(drive_id: str, db: AsyncSession):
-    try:
-        drive = await _get_drive_or_404(drive_id, db)
-        students = await _load_all_students(db)
-        rules = await _load_rules(drive_id, db)
+async def _run_pipeline_bg(drive_id: str):
+    """Runs in background with its OWN DB session (request session will be closed)."""
+    from sqlalchemy import select
+    async with async_session_factory() as db:
+        try:
+            drive = await _get_drive_or_404(drive_id, db)
+            students = await _load_all_students(db)
+            rules = await _load_rules(drive_id, db)
 
-        state = await run_placement_pipeline(drive_id, drive.jd_text, students, rules)
+            # Emit start event
+            db.add(AgentEvent(
+                drive_id=drive_id, event_type="pipeline_started",
+                agent_name="supervisor", payload={"drive": drive.title}
+            ))
+            await db.commit()
 
-        # Persist eligibility results
-        for r in state.get("eligibility_results", []):
-            er = EligibilityResult(
-                drive_id=drive_id,
-                student_id=r["student_id"],
-                eligible=r["eligible"],
-                is_edge_case=r.get("is_edge_case", False),
-                reason=r.get("reasons", []),
-            )
-            db.add(er)
+            state = await run_placement_pipeline(drive_id, drive.jd_text, students, rules)
 
-        # Persist match scores
-        for m in state.get("match_results", []):
-            ms = MatchScore(
-                drive_id=drive_id,
-                student_id=m["student_id"],
-                score=m["score"],
-                rank=m["rank"],
-                explanation=m.get("explanation"),
-                shortlisted=m["student_id"] in state.get("shortlisted_student_ids", []),
-            )
-            db.add(ms)
+            # Persist eligibility results
+            for r in state.get("eligibility_results", []):
+                er = EligibilityResult(
+                    drive_id=drive_id,
+                    student_id=r["student_id"],
+                    eligible=r["eligible"],
+                    is_edge_case=r.get("is_edge_case", False),
+                    reason=r.get("reasons", []),
+                )
+                db.add(er)
 
-        # Persist agent events
-        for evt in state.get("agent_events", []):
-            ae = AgentEvent(
-                drive_id=drive_id,
-                event_type=evt["event_type"],
-                agent_name=evt.get("agent_name"),
-                payload=evt.get("payload"),
-            )
-            db.add(ae)
+            # Persist match scores
+            for m in state.get("match_results", []):
+                ms = MatchScore(
+                    drive_id=drive_id,
+                    student_id=m["student_id"],
+                    score=m["score"],
+                    rank=m["rank"],
+                    explanation=m.get("explanation"),
+                    shortlisted=m["student_id"] in state.get("shortlisted_student_ids", []),
+                )
+                db.add(ms)
 
-        drive.status = DriveStatus.SHORTLIST_PENDING
-        drive.jd_parsed = state.get("jd_parsed")
-        await db.commit()
-        logger.info(f"Pipeline complete for drive {drive_id}")
+            # Persist agent events
+            for evt in state.get("agent_events", []):
+                ae = AgentEvent(
+                    drive_id=drive_id,
+                    event_type=evt["event_type"],
+                    agent_name=evt.get("agent_name"),
+                    payload=evt.get("payload"),
+                )
+                db.add(ae)
 
-    except Exception as e:
-        logger.error(f"Pipeline failed for drive {drive_id}: {e}")
+            drive.status = DriveStatus.SHORTLIST_PENDING
+            drive.jd_parsed = state.get("jd_parsed")
+            await db.commit()
+            logger.info(f"Pipeline complete for drive {drive_id}")
+
+        except Exception as e:
+            logger.error(f"Pipeline failed for drive {drive_id}: {e}")
+            # Persist the error as an agent event so the dashboard shows it
+            try:
+                db.add(AgentEvent(
+                    drive_id=drive_id, event_type="pipeline_error",
+                    agent_name="supervisor", payload={"error": str(e)[:500]}
+                ))
+                await db.commit()
+            except Exception:
+                pass
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
@@ -211,7 +230,7 @@ async def run_pipeline(
     if not drive.jd_text:
         raise HTTPException(status_code=400, detail="JD text is required before running pipeline")
 
-    background_tasks.add_task(_run_pipeline_bg, drive_id, db)
+    background_tasks.add_task(_run_pipeline_bg, drive_id)  # fresh session inside
     drive.status = DriveStatus.JD_ANALYZED
     await db.commit()
     return {"message": "Pipeline started", "drive_id": drive_id}
