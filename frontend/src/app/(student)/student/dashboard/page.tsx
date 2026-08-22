@@ -91,8 +91,11 @@ export default function StudentDashboard() {
       const meRes = await studentsAPI.getMe();
       setProfile(meRes.data);
       toast.success("✅ Resume uploaded successfully!");
-    } catch {
-      toast.error("Upload failed — check file size (<10MB)");
+    } catch (err: unknown) {
+      const detail = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
+      const msg = detail ?? (err as Error)?.message ?? "Upload failed";
+      console.error("Resume upload error:", err);
+      toast.error(`Upload failed: ${msg}`);
     } finally {
       setUploading(false);
     }
