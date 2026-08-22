@@ -223,7 +223,7 @@ async def run_pipeline(
     drive_id: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(require_role(UserRole.TPO)),
+    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
 ):
     """Trigger the full AI pipeline for a drive (runs in background)."""
     drive = await _get_drive_or_404(drive_id, db)
@@ -283,7 +283,7 @@ async def list_drives(
 async def get_shortlist(
     drive_id: str,
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(require_role(UserRole.TPO)),
+    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
 ):
     result = await db.execute(
         select(MatchScore)

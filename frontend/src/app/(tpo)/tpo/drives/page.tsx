@@ -553,7 +553,7 @@ export default function DrivesPage() {
       <div className="ml-64 flex-1 flex flex-col min-h-screen">
         <TopBar title="Placement Drives" subtitle="Manage drives and AI pipeline execution" />
 
-        <main className="p-8 max-w-5xl mx-auto w-full space-y-6">
+        <main className="p-8 space-y-6">
           {/* Stats bar */}
           <div className="grid grid-cols-4 gap-4">
             {[
