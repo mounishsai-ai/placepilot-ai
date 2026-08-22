@@ -120,7 +120,7 @@ export default function NotificationsPage() {
       <div className="ml-64 flex-1 flex flex-col">
         <TopBar title="Notifications" subtitle="Manage student communications" />
 
-        <main className="p-8 max-w-5xl mx-auto w-full space-y-6">
+        <main className="p-8 space-y-6">
           {/* Stats */}
           <div className="grid grid-cols-4 gap-4">
             {[

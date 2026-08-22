@@ -19,7 +19,7 @@ router = APIRouter()
 @router.get("/dashboard")
 async def get_tpo_dashboard(
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(require_role(UserRole.TPO)),
+    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
 ):
     """Main TPO dashboard — all live KPIs and pending actions."""
 
@@ -143,7 +143,7 @@ async def get_skill_gap(
 @router.get("/readiness")
 async def get_placement_readiness(
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(require_role(UserRole.TPO)),
+    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
 ):
     """Placement readiness distribution across all students."""
     result = await db.execute(
