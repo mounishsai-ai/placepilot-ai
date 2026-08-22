@@ -550,7 +550,7 @@ export default function DrivesPage() {
   return (
     <div className="min-h-screen bg-cosmic flex">
       <TPOSidebar />
-      <div className="flex-1 flex flex-col">
+      <div className="ml-64 flex-1 flex flex-col min-h-screen">
         <TopBar title="Placement Drives" subtitle="Manage drives and AI pipeline execution" />
 
         <main className="p-8 max-w-5xl mx-auto w-full space-y-6">

@@ -78,7 +78,7 @@ export default function SchedulePage() {
   return (
     <div className="min-h-screen bg-cosmic flex">
       <TPOSidebar />
-      <div className="flex-1 flex flex-col">
+      <div className="ml-64 flex-1 flex flex-col">
         <TopBar title="Interview Schedule" subtitle="FCFS auto-allocation · manage interview rounds" />
 
         <main className="p-8 max-w-5xl mx-auto w-full space-y-6">

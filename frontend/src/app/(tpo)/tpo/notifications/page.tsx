@@ -50,9 +50,17 @@ export default function NotificationsPage() {
   const fetchQueue = useCallback(async () => {
     try {
       const res = await notificationsAPI.getOfflineQueue();
-      setQueue(res.data);
+      // API may return array directly or {items:[...]} or {notifications:[...]}
+      const data = res.data;
+      const arr = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.items)
+          ? data.items
+          : Array.isArray(data?.notifications)
+            ? data.notifications
+            : [];
+      setQueue(arr);
     } catch {
-      // offline queue might be empty
       setQueue([]);
     } finally {
       setLoading(false);
@@ -109,7 +117,7 @@ export default function NotificationsPage() {
   return (
     <div className="min-h-screen bg-cosmic flex">
       <TPOSidebar />
-      <div className="flex-1 flex flex-col">
+      <div className="ml-64 flex-1 flex flex-col">
         <TopBar title="Notifications" subtitle="Manage student communications" />
 
         <main className="p-8 max-w-5xl mx-auto w-full space-y-6">
