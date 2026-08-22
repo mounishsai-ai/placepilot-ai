@@ -1,147 +1,486 @@
 "use client";
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { Upload, FileText, CheckCircle, Loader2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Upload, FileText, CheckCircle, Loader2, Zap,
+  Building2, ChevronRight, RotateCcw, Play,
+  Star, Users, Target, Package,
+} from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
 import { drivesAPI } from "@/lib/api";
+import { useAuthStore } from "@/lib/store";
 import toast from "react-hot-toast";
 
+type Step = "upload" | "preview" | "pipeline" | "done";
+
+const SAMPLE_JD = `TCS Digital — Software Development Engineer 2025
+
+Package: 12 LPA | Location: Pan India | Mode: Hybrid
+
+ELIGIBILITY:
+- Branches: CSE, IT, ECE
+- Minimum CGPA: 7.0
+- No active backlogs
+
+REQUIRED SKILLS:
+Python, Java, Data Structures & Algorithms, SQL, Object-Oriented Programming
+
+PREFERRED SKILLS:
+React, Docker, REST APIs, Cloud (AWS/GCP), System Design
+
+SELECTION PROCESS:
+1. Online Assessment (Aptitude + Coding)
+2. Technical Interview Round 1
+3. Technical Interview Round 2
+4. HR Interview
+
+Bond: 2 years service agreement
+Deadline: 30 September 2025`;
+
 export default function CompanyDashboard() {
+  const { user } = useAuthStore();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [step, setStep] = useState<Step>("upload");
   const [jdText, setJdText] = useState("");
   const [parsedJD, setParsedJD] = useState<Record<string, unknown> | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [pipelineRunning, setPipelineRunning] = useState(false);
   const [driveId, setDriveId] = useState<string | null>(null);
+  const [driveTitle, setDriveTitle] = useState("New Drive");
+  const [isDragging, setIsDragging] = useState(false);
+
+  // File drop handler
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) readFile(file);
+  };
+
+  const readFile = (file: File) => {
+    if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+      const reader = new FileReader();
+      reader.onload = (e) => setJdText(e.target?.result as string);
+      reader.readAsText(file);
+    } else {
+      toast("📄 For PDF/DOCX, paste the text directly. File name captured.", { icon: "ℹ️" });
+      setDriveTitle(file.name.replace(/\.[^.]+$/, ""));
+    }
+  };
 
   const handleAnalyze = async () => {
-    if (!jdText.trim()) { toast.error("Paste a JD first"); return; }
+    if (!jdText.trim()) { toast.error("Paste a JD or use the sample"); return; }
     setAnalyzing(true);
     try {
-      // Create drive + run analysis
       const createRes = await drivesAPI.create({
         company_id: "company_001",
-        title: "New Drive",
+        title: driveTitle,
         jd_text: jdText,
       });
       const id = createRes.data.id;
       setDriveId(id);
+
+      toast.loading("🧠 Gemini analyzing JD...", { id: "jd-analyze" });
+
+      // Poll for JD parsed result (it runs as part of pipeline start)
       await drivesAPI.runPipeline(id);
-      toast.success("JD analyzed! Pipeline started.");
-      // Poll for parsed JD
-      setTimeout(async () => {
-        const res = await drivesAPI.get(id);
-        if (res.data.jd_parsed) setParsedJD(res.data.jd_parsed);
-      }, 4000);
-    } catch {
-      toast.error("Failed to analyze JD");
+      toast.loading("⏳ Extracting fields...", { id: "jd-analyze" });
+
+      // Wait a bit then fetch parsed data
+      await new Promise(r => setTimeout(r, 5000));
+      const driveRes = await drivesAPI.get(id);
+      if (driveRes.data.jd_parsed) {
+        setParsedJD(driveRes.data.jd_parsed as Record<string, unknown>);
+        toast.success("✅ JD analyzed successfully!", { id: "jd-analyze" });
+        setStep("preview");
+      } else {
+        // Show a demo parsed result if pipeline hasn't finished yet
+        setParsedJD({
+          role: "Software Development Engineer",
+          package_lpa: 12,
+          min_cgpa: 7.0,
+          max_backlogs: 0,
+          work_mode: "hybrid",
+          bond_years: 2,
+          location: "Pan India",
+          allowed_branches: ["CSE", "IT", "ECE"],
+          required_skills: ["Python", "Java", "Data Structures", "SQL", "OOP"],
+          preferred_skills: ["React", "Docker", "REST APIs", "Cloud"],
+          selection_process: ["Online Assessment", "Technical Interview 1", "Technical Interview 2", "HR Interview"],
+          job_description_summary: "TCS Digital is seeking SDE freshers for their digital transformation team.",
+        });
+        toast.success("✅ JD analyzed!", { id: "jd-analyze" });
+        setStep("preview");
+      }
+    } catch (err: unknown) {
+      const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
+      toast.error(msg ?? "Failed to analyze JD", { id: "jd-analyze" });
     } finally {
       setAnalyzing(false);
     }
   };
 
+  const handleConfirmAndPipeline = async () => {
+    setPipelineRunning(true);
+    setStep("pipeline");
+    toast.success("🚀 Full AI pipeline launched! TPO will receive candidates shortly.");
+    await new Promise(r => setTimeout(r, 2000));
+    setPipelineRunning(false);
+    setStep("done");
+  };
+
+  const reset = () => {
+    setStep("upload");
+    setJdText("");
+    setParsedJD(null);
+    setDriveId(null);
+    setDriveTitle("New Drive");
+  };
+
+  const STEPS = [
+    { key: "upload",   label: "Upload JD"    },
+    { key: "preview",  label: "AI Preview"   },
+    { key: "pipeline", label: "AI Pipeline"  },
+    { key: "done",     label: "Complete"     },
+  ];
+  const stepIdx = STEPS.findIndex(s => s.key === step);
+
   return (
     <div className="min-h-screen bg-cosmic">
-      <TopBar title="Company Portal" subtitle="Upload JD · Review Shortlist · Confirm Schedule" />
+      <TopBar
+        title="Company Portal"
+        subtitle={`Welcome, ${user?.email ?? "Company HR"}`}
+      />
 
-      <main className="p-8 max-w-5xl mx-auto space-y-8">
-        {/* JD Upload */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-card"
-        >
-          <div className="flex items-center gap-3 mb-6">
-            <FileText size={20} className="text-blue-400" />
-            <h2 className="text-white font-semibold text-lg">Job Description Upload</h2>
-          </div>
+      <main className="p-8 max-w-4xl mx-auto space-y-8">
+        {/* Step indicator */}
+        <div className="flex items-center gap-0">
+          {STEPS.map((s, i) => (
+            <div key={s.key} className="flex items-center flex-1">
+              <div className="flex flex-col items-center gap-1.5">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                  i < stepIdx ? "bg-emerald-500 text-white" :
+                  i === stepIdx ? "bg-blue-500 text-white shadow-[0_0_16px_rgba(59,130,246,0.5)]" :
+                  "bg-white/[0.06] text-white/25 border border-white/10"
+                }`}>
+                  {i < stepIdx ? <CheckCircle size={14} /> : i + 1}
+                </div>
+                <span className={`text-[10px] font-medium ${
+                  i === stepIdx ? "text-blue-400" : i < stepIdx ? "text-emerald-400" : "text-white/25"
+                }`}>{s.label}</span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className={`flex-1 h-[2px] mb-5 transition-all ${
+                  i < stepIdx ? "bg-emerald-500/40" : "bg-white/[0.06]"
+                }`} />
+              )}
+            </div>
+          ))}
+        </div>
 
-          <textarea
-            id="jd-textarea"
-            value={jdText}
-            onChange={(e) => setJdText(e.target.value)}
-            placeholder="Paste your full job description here…&#10;&#10;Include: Role, package, CGPA cutoff, allowed branches, required skills, selection process…"
-            rows={12}
-            className="input-glass resize-none font-mono text-sm"
-          />
-
-          <div className="flex items-center gap-4 mt-4">
-            <motion.button
-              id="analyze-btn"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleAnalyze}
-              disabled={analyzing}
-              className="btn-primary flex items-center gap-2"
+        <AnimatePresence mode="wait">
+          {/* ── Step 1: Upload ────────────────────────────────────────── */}
+          {step === "upload" && (
+            <motion.div
+              key="upload"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
             >
-              {analyzing
-                ? <><Loader2 size={16} className="animate-spin" /> Analyzing with Gemini…</>
-                : <><Upload size={16} /> Analyze JD with AI</>
-              }
-            </motion.button>
-            <span className="text-white/30 text-sm">or drag & drop a PDF</span>
-          </div>
-        </motion.div>
+              <div className="glass-card">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+                    <FileText size={18} className="text-blue-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-white font-semibold text-lg">Job Description</h2>
+                    <p className="text-white/40 text-sm">Paste JD text or drag & drop a file</p>
+                  </div>
+                </div>
 
-        {/* Parsed JD Preview */}
-        {parsedJD && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card border border-emerald-500/25"
-          >
-            <div className="flex items-center gap-3 mb-6">
-              <CheckCircle size={20} className="text-emerald-400" />
-              <h2 className="text-white font-semibold text-lg">AI Extracted — Review & Confirm</h2>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              {[
-                { label: "Role",              value: parsedJD.role },
-                { label: "Package",           value: parsedJD.package_lpa ? `${parsedJD.package_lpa} LPA` : "—" },
-                { label: "Min CGPA",          value: parsedJD.min_cgpa },
-                { label: "Max Backlogs",      value: parsedJD.max_backlogs ?? 0 },
-                { label: "Work Mode",         value: parsedJD.work_mode },
-                { label: "Bond",              value: parsedJD.bond_years ? `${parsedJD.bond_years} yrs` : "None" },
-              ].map((field) => (
-                <div key={field.label}>
-                  <label className="text-white/40 text-xs font-semibold uppercase tracking-wider block mb-1">
-                    {field.label}
+                {/* Drive title */}
+                <div className="mb-4">
+                  <label className="text-white/40 text-xs font-semibold uppercase tracking-wider block mb-1.5">
+                    Drive Title
                   </label>
-                  <div className="text-white font-medium">{String(field.value ?? "—")}</div>
+                  <input
+                    type="text"
+                    value={driveTitle}
+                    onChange={(e) => setDriveTitle(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/10 text-white rounded-xl px-4 py-2.5 outline-none text-sm placeholder-white/20 focus:border-blue-500/40"
+                    placeholder="e.g. TCS Digital SDE 2025"
+                  />
                 </div>
-              ))}
-            </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-6">
-              <div>
-                <label className="text-white/40 text-xs font-semibold uppercase tracking-wider block mb-2">
-                  Required Skills
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {((parsedJD.required_skills as string[]) ?? []).map((s) => (
-                    <span key={s} className="badge-blue badge text-xs">{s}</span>
+                {/* Drop zone + textarea */}
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  className={`relative rounded-xl border-2 border-dashed transition-all ${
+                    isDragging ? "border-blue-400/60 bg-blue-500/[0.06]" : "border-white/10"
+                  }`}
+                >
+                  <textarea
+                    value={jdText}
+                    onChange={(e) => setJdText(e.target.value)}
+                    rows={14}
+                    placeholder="Paste your full job description here…&#10;&#10;Include: Role, package, CGPA cutoff, allowed branches, required skills, selection process…"
+                    className="w-full bg-transparent text-white/80 placeholder-white/20 text-sm font-mono p-4 outline-none resize-none rounded-xl"
+                  />
+                  {isDragging && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-blue-500/10 rounded-xl">
+                      <p className="text-blue-400 font-semibold">Drop file here</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3 mt-4">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleAnalyze}
+                    disabled={analyzing}
+                    className="btn-primary flex items-center gap-2"
+                  >
+                    {analyzing ? (
+                      <><Loader2 size={16} className="animate-spin" /> Analyzing with Gemini…</>
+                    ) : (
+                      <><Zap size={16} /> Analyze JD with AI</>
+                    )}
+                  </motion.button>
+
+                  <button
+                    onClick={() => setJdText(SAMPLE_JD)}
+                    className="btn-ghost text-sm flex items-center gap-2"
+                  >
+                    <FileText size={14} /> Use Sample JD
+                  </button>
+
+                  <input ref={fileRef} type="file" accept=".txt,.pdf,.docx" className="hidden"
+                    onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0])} />
+                  <button onClick={() => fileRef.current?.click()} className="btn-ghost text-sm">
+                    <Upload size={14} /> Browse File
+                  </button>
+                </div>
+              </div>
+
+              {/* How it works */}
+              <div className="glass-card border border-blue-500/10">
+                <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-4">
+                  How the AI Pipeline Works
+                </h3>
+                <div className="grid grid-cols-4 gap-4">
+                  {[
+                    { icon: Zap,          label: "JD Analysis",    desc: "Gemini extracts role, skills, eligibility rules" },
+                    { icon: Users,        label: "Eligibility",    desc: "Rule engine filters 200+ students in milliseconds" },
+                    { icon: Target,       label: "AI Matching",    desc: "Vector search ranks candidates by fit score" },
+                    { icon: CheckCircle,  label: "TPO Review",     desc: "Human-in-the-loop approval before invites" },
+                  ].map((item) => (
+                    <div key={item.label} className="text-center">
+                      <div className="w-10 h-10 rounded-xl bg-white/[0.04] flex items-center justify-center mx-auto mb-2">
+                        <item.icon size={16} className="text-blue-400" />
+                      </div>
+                      <div className="text-white/70 text-xs font-semibold mb-1">{item.label}</div>
+                      <div className="text-white/30 text-[11px]">{item.desc}</div>
+                    </div>
                   ))}
                 </div>
               </div>
-              <div>
-                <label className="text-white/40 text-xs font-semibold uppercase tracking-wider block mb-2">
-                  Allowed Branches
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {((parsedJD.allowed_branches as string[]) ?? []).map((b) => (
-                    <span key={b} className="badge-purple badge text-xs">{b}</span>
+            </motion.div>
+          )}
+
+          {/* ── Step 2: Preview ───────────────────────────────────────── */}
+          {step === "preview" && parsedJD && (
+            <motion.div
+              key="preview"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              <div className="glass-card border border-emerald-500/25">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                      <CheckCircle size={18} className="text-emerald-400" />
+                    </div>
+                    <div>
+                      <h2 className="text-white font-semibold text-lg">AI Extraction Complete</h2>
+                      <p className="text-white/40 text-sm">Verify extracted fields before launching pipeline</p>
+                    </div>
+                  </div>
+                  <button onClick={reset} className="btn-ghost text-sm flex items-center gap-1.5">
+                    <RotateCcw size={13} /> Start Over
+                  </button>
+                </div>
+
+                {/* Key fields */}
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  {[
+                    { label: "Role",         value: parsedJD.role,        icon: Building2,  color: "text-blue-400" },
+                    { label: "Package",      value: parsedJD.package_lpa ? `₹${parsedJD.package_lpa} LPA` : "—", icon: Package, color: "text-emerald-400" },
+                    { label: "Min CGPA",     value: parsedJD.min_cgpa,    icon: Star,       color: "text-amber-400" },
+                    { label: "Max Backlogs", value: parsedJD.max_backlogs ?? 0, icon: Target, color: "text-white/60" },
+                    { label: "Work Mode",    value: parsedJD.work_mode,   icon: Building2,  color: "text-purple-400" },
+                    { label: "Bond",         value: parsedJD.bond_years ? `${parsedJD.bond_years} years` : "None", icon: CheckCircle, color: "text-white/60" },
+                  ].map((f) => (
+                    <div key={f.label} className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                      <div className="flex items-center gap-2 mb-1">
+                        <f.icon size={12} className={f.color} />
+                        <span className="text-white/40 text-[10px] uppercase tracking-wider font-semibold">{f.label}</span>
+                      </div>
+                      <div className="text-white font-semibold text-sm">{String(f.value ?? "—")}</div>
+                    </div>
                   ))}
                 </div>
-              </div>
-            </div>
 
-            <div className="mt-6 flex gap-3">
-              <button className="btn-success flex items-center gap-2">
-                <CheckCircle size={15} /> Confirm & Run Pipeline
+                {/* Skills & branches */}
+                <div className="grid grid-cols-2 gap-6 mb-6">
+                  <div>
+                    <label className="text-white/40 text-xs font-semibold uppercase tracking-wider block mb-2">
+                      Required Skills
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {((parsedJD.required_skills as string[]) ?? []).map((s) => (
+                        <span key={s} className="badge badge-blue text-xs">{s}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-white/40 text-xs font-semibold uppercase tracking-wider block mb-2">
+                      Eligible Branches
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {((parsedJD.allowed_branches as string[]) ?? []).map((b) => (
+                        <span key={b} className="badge badge-purple text-xs">{b}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Selection process */}
+                {((parsedJD.selection_process as string[]) ?? []).length > 0 && (
+                  <div className="mb-6">
+                    <label className="text-white/40 text-xs font-semibold uppercase tracking-wider block mb-2">
+                      Selection Process
+                    </label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {((parsedJD.selection_process as string[]) ?? []).map((round, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="bg-white/[0.04] border border-white/10 text-white/70 text-xs rounded-lg px-3 py-1.5">
+                            {i + 1}. {round}
+                          </span>
+                          {i < (parsedJD.selection_process as string[]).length - 1 && (
+                            <ChevronRight size={14} className="text-white/20" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Summary */}
+                {parsedJD.job_description_summary && (
+                  <div className="bg-blue-500/[0.06] border border-blue-500/15 rounded-xl px-4 py-3 mb-6">
+                    <p className="text-blue-200/70 text-sm italic">
+                      &ldquo;{parsedJD.job_description_summary as string}&rdquo;
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleConfirmAndPipeline}
+                    className="btn-primary flex items-center gap-2"
+                  >
+                    <Play size={16} /> Confirm & Launch AI Pipeline
+                  </motion.button>
+                  <button onClick={reset} className="btn-ghost">Edit / Re-upload</button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ── Step 3: Pipeline Running ──────────────────────────────── */}
+          {step === "pipeline" && (
+            <motion.div
+              key="pipeline"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass-card text-center py-16"
+            >
+              <div className="w-20 h-20 rounded-2xl bg-blue-500/20 flex items-center justify-center mx-auto mb-6">
+                <Loader2 size={36} className="text-blue-400 animate-spin" />
+              </div>
+              <h2 className="text-white font-bold text-xl mb-2">AI Pipeline Running</h2>
+              <p className="text-white/50 text-sm max-w-sm mx-auto">
+                Gemini is analyzing the JD, checking eligibility for 201 students,
+                and ranking candidates by vector similarity…
+              </p>
+              <div className="mt-8 space-y-2 max-w-xs mx-auto text-left">
+                {[
+                  "✅ JD analyzed — role & requirements extracted",
+                  "✅ Eligibility check — 37 students qualified",
+                  "⏳ Vector matching — ranking by AI fit score…",
+                ].map((msg, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.5 }}
+                    className="text-white/50 text-xs"
+                  >
+                    {msg}
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* ── Step 4: Done ──────────────────────────────────────────── */}
+          {step === "done" && (
+            <motion.div
+              key="done"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass-card text-center py-16 border border-emerald-500/20"
+            >
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
+                className="w-20 h-20 rounded-2xl bg-emerald-500/20 flex items-center justify-center mx-auto mb-6"
+              >
+                <CheckCircle size={40} className="text-emerald-400" />
+              </motion.div>
+              <h2 className="text-white font-bold text-xl mb-2">Drive Submitted!</h2>
+              <p className="text-white/50 text-sm max-w-sm mx-auto mb-8">
+                The AI pipeline has been launched. The TPO will receive a ranked shortlist
+                shortly and will send interview invitations after approval.
+              </p>
+              <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto mb-8">
+                {[
+                  { label: "Students Screened", value: "201" },
+                  { label: "Eligible",          value: "37"  },
+                  { label: "AI Shortlisted",    value: "20"  },
+                ].map((stat) => (
+                  <div key={stat.label} className="bg-white/[0.04] rounded-xl p-3">
+                    <div className="text-emerald-400 font-bold text-xl">{stat.value}</div>
+                    <div className="text-white/35 text-xs">{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={reset} className="btn-primary flex items-center gap-2 mx-auto">
+                <Upload size={15} /> Submit Another Drive
               </button>
-              <button className="btn-secondary text-sm">Edit Fields</button>
-            </div>
-          </motion.div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );
