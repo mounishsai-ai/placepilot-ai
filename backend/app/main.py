@@ -34,9 +34,17 @@ app = FastAPI(
 )
 
 # ─── CORS ────────────────────────────────────────────────────────────────────
+CORS_ORIGINS = [
+    settings.FRONTEND_URL,
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://*.vercel.app",         # Vercel preview deployments
+    "https://placementai.vercel.app",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL, "http://localhost:3000", "http://localhost:3001"],
+    allow_origins=CORS_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,6 +64,7 @@ app.include_router(notifications.router, prefix="/api/notifications", tags=["Not
 app.include_router(websocket.router,     prefix="/ws",                tags=["WebSocket"])
 
 
+@app.get("/health")          # Railway / Render health check
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "app": settings.APP_NAME, "env": settings.APP_ENV}

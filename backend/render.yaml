@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: placementai-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: placementai-db
+          property: connectionString
+      - key: REDIS_URL
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: UPLOAD_DIR
+        value: /tmp/uploads
+      - key: CHROMA_PERSIST_DIR
+        value: /tmp/chroma_db
+
+databases:
+  - name: placementai-db
+    databaseName: placementai
+    user: placementai
