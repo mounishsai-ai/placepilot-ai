@@ -63,11 +63,10 @@ export const studentsAPI = {
   update: (id: string, data: object) => api.put(`/api/students/${id}`, data),
   getSchedule: (id: string) => api.get(`/api/students/${id}/schedule`),
   getMatches: (id: string) => api.get(`/api/students/${id}/matches`),
-  uploadResume: (id: string, file: File) => {
-    const form = new FormData();
-    form.append("file", file);
-    return api.post(`/api/students/${id}/upload-resume`, form);
-  },
+  uploadResume: (form: FormData) =>
+    api.post("/api/students/me/resume", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
 };
 
 // ─── Analytics ────────────────────────────────────────────────────────────

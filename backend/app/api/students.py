@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-import os, uuid
+import os, uuid, aiofiles
 
 from app.database import get_db
 from app.models import Student, StudentSkill, InterviewSlot, MatchScore, UserRole, User
@@ -102,8 +102,9 @@ async def get_my_profile(
         "matches": [
             {
                 "drive_id": m.drive_id,
-                "role": m.drive.jd_parsed.get("role") if m.drive and m.drive.jd_parsed else None,
-                "score": round(m.score * 100, 1),
+                "role": m.drive.jd_parsed.get("role") if m.drive and m.drive.jd_parsed else "Software Engineer",
+                "company": m.drive.company.name if m.drive and hasattr(m.drive, 'company') and m.drive.company else m.drive.title if m.drive else "Company",
+                "score": round(m.score * 100, 1) if m.score <= 1 else round(m.score, 1),
                 "rank": m.rank,
                 "shortlisted": m.shortlisted,
             }
@@ -331,3 +332,32 @@ async def get_student_matches(
         }
         for m in matches
     ]
+
+
+@router.post("/me/resume")
+async def upload_my_resume(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload or replace resume for the logged-in student."""
+    result = await db.execute(
+        select(Student).where(Student.email == current_user.email)
+    )
+    student = result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student record not found")
+
+    # Save file
+    ext = os.path.splitext(file.filename or "")[-1].lower() or ".pdf"
+    filename = f"resume_{student.id}{ext}"
+    filepath = os.path.join(settings.UPLOAD_DIR, filename)
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+    async with aiofiles.open(filepath, "wb") as f:
+        content = await file.read()
+        await f.write(content)
+
+    student.resume_url = f"/uploads/{filename}"
+    await db.commit()
+    return {"resume_url": student.resume_url, "filename": filename}
