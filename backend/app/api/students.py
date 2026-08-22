@@ -145,6 +145,42 @@ async def create_student(
     return {"id": student.id, "roll_no": student.roll_no}
 
 
+@router.post("/me/resume")
+async def upload_my_resume(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload or replace resume for the logged-in student."""
+    result = await db.execute(
+        select(Student).where(Student.email == current_user.email)
+    )
+    student = result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student record not found")
+
+    # Ensure upload dir exists
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+    # Read file content
+    content = await file.read()
+    size_mb = len(content) / (1024 * 1024)
+    if size_mb > 20:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 20MB.")
+
+    # Save file
+    ext = os.path.splitext(file.filename or "")[-1].lower() or ".pdf"
+    filename = f"resume_{student.id}{ext}"
+    filepath = os.path.join(settings.UPLOAD_DIR, filename)
+
+    async with aiofiles.open(filepath, "wb") as f:
+        await f.write(content)
+
+    student.resume_url = f"/uploads/{filename}"
+    await db.commit()
+    return {"resume_url": student.resume_url, "filename": filename, "size_mb": round(size_mb, 2)}
+
+
 @router.get("/")
 async def list_students(
     branch: Optional[str] = None,
@@ -332,32 +368,3 @@ async def get_student_matches(
         }
         for m in matches
     ]
-
-
-@router.post("/me/resume")
-async def upload_my_resume(
-    file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Upload or replace resume for the logged-in student."""
-    result = await db.execute(
-        select(Student).where(Student.email == current_user.email)
-    )
-    student = result.scalar_one_or_none()
-    if not student:
-        raise HTTPException(status_code=404, detail="Student record not found")
-
-    # Save file
-    ext = os.path.splitext(file.filename or "")[-1].lower() or ".pdf"
-    filename = f"resume_{student.id}{ext}"
-    filepath = os.path.join(settings.UPLOAD_DIR, filename)
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-
-    async with aiofiles.open(filepath, "wb") as f:
-        content = await file.read()
-        await f.write(content)
-
-    student.resume_url = f"/uploads/{filename}"
-    await db.commit()
-    return {"resume_url": student.resume_url, "filename": filename}
