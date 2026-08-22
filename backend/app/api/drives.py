@@ -175,10 +175,10 @@ async def create_drive(
 ):
     company_id = body.company_id
 
-    # Auto-resolve company from the logged-in user's email if not explicitly provided
+    # Auto-resolve company from the logged-in user if not explicitly provided
     if not company_id:
         company_res = await db.execute(
-            select(Company).where(Company.email == current_user.email)
+            select(Company).where(Company.user_id == current_user.id)
         )
         company = company_res.scalar_one_or_none()
         if company:

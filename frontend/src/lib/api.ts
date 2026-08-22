@@ -64,9 +64,7 @@ export const studentsAPI = {
   getSchedule: (id: string) => api.get(`/api/students/${id}/schedule`),
   getMatches: (id: string) => api.get(`/api/students/${id}/matches`),
   uploadResume: (form: FormData) =>
-    api.post("/api/students/me/resume", form, {
-      headers: { "Content-Type": "multipart/form-data" },
-    }),
+    api.post("/api/students/me/resume", form),
 };
 
 // ─── Analytics ────────────────────────────────────────────────────────────

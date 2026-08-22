@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Clock, CheckCircle, XCircle, Pause, Loader2,
-  User, BookOpen, Cpu, Calendar, BarChart2, LogOut,
+  User, BookOpen, Cpu, Calendar, LogOut,
 } from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
 import { scheduleAPI } from "@/lib/api";
@@ -16,8 +16,7 @@ import { clsx } from "clsx";
 // ─── Panel Sidebar ─────────────────────────────────────────────────────────
 
 const PANEL_NAV = [
-  { href: "/panel/schedule", icon: Calendar,  label: "My Schedule" },
-  { href: "/panel/results",  icon: BarChart2, label: "Results"     },
+  { href: "/panel/schedule", icon: Calendar, label: "My Schedule" },
 ];
 
 function PanelSidebar() {
@@ -166,14 +165,12 @@ export default function PanelSchedulePage() {
   const handleResult = async (slotId: string, result: string) => {
     setSaving(slotId);
     try {
-      // Try API first, fall back silently for demo slots
-      try {
+      // Try API first, but skip for demo slots to prevent 404
+      if (!slotId.startsWith("slot_d")) {
         await scheduleAPI.updateResult(slotId, {
           result,
           feedback: feedback[slotId] ?? "",
         });
-      } catch {
-        // Demo slot — update local state only
       }
       setSlots((prev) =>
         prev.map((s) => s.id === slotId ? { ...s, result, status: "completed" } : s)
