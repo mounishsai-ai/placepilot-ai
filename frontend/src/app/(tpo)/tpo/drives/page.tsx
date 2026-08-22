@@ -501,11 +501,18 @@ export default function DrivesPage() {
   const [runningId, setRunningId] = useState<string | null>(null);
   const [shortlistDriveId, setShortlistDriveId] = useState<string | null>(null);
   const [shortlistCandidates, setShortlistCandidates] = useState<ShortlistCandidate[]>([]);
+  const [pollingActive, setPollingActive] = useState(false);
+
+  const ACTIVE_STATUSES = ["jd_analyzed", "eligibility_checked", "matched"];
 
   const fetchDrives = useCallback(async () => {
     try {
       const res = await drivesAPI.list();
-      setDrives(res.data);
+      const data: Drive[] = res.data;
+      setDrives(data);
+      // Auto-poll while any drive is mid-pipeline
+      const hasActive = data.some(d => ACTIVE_STATUSES.includes(d.status));
+      setPollingActive(hasActive);
     } catch {
       toast.error("Failed to load drives");
     } finally {
@@ -513,7 +520,15 @@ export default function DrivesPage() {
     }
   }, []);
 
+  // Initial load
   useEffect(() => { fetchDrives(); }, [fetchDrives]);
+
+  // Auto-poll every 4s while pipeline is running
+  useEffect(() => {
+    if (!pollingActive) return;
+    const interval = setInterval(fetchDrives, 4000);
+    return () => clearInterval(interval);
+  }, [pollingActive, fetchDrives]);
 
   const handleRunPipeline = async (id: string) => {
     setRunningId(id);
@@ -551,7 +566,14 @@ export default function DrivesPage() {
     <div className="min-h-screen bg-cosmic flex">
       <TPOSidebar />
       <div className="ml-64 flex-1 flex flex-col min-h-screen">
-        <TopBar title="Placement Drives" subtitle="Manage drives and AI pipeline execution" />
+        <TopBar
+          title="Placement Drives"
+          subtitle={pollingActive
+            ? "🔄 Pipeline running — auto-refreshing every 4s…"
+            : "Manage drives and AI pipeline execution"
+          }
+          connected={!pollingActive}
+        />
 
         <main className="p-8 space-y-6">
           {/* Stats bar */}
