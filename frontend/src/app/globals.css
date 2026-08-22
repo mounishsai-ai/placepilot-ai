@@ -42,6 +42,16 @@ body {
 
 /* ── Glassmorphism Components ───────────────────────────────────────────── */
 @layer components {
+  /* ── Global dark select/option fix (Windows Chrome shows white otherwise) ── */
+  select {
+    background-color: #0d1117 !important;
+    color: white;
+  }
+  select option {
+    background-color: #0d1117;
+    color: white;
+  }
+
   .glass {
     @apply bg-white/[0.06] backdrop-blur-xl border border-white/[0.10] rounded-2xl;
     box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08);

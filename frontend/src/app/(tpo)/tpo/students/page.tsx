@@ -99,7 +99,7 @@ export default function StudentsPage() {
   return (
     <div className="min-h-screen bg-cosmic flex">
       <TPOSidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="ml-64 flex-1 flex flex-col overflow-hidden">
         <TopBar title="Student Management" subtitle={`${students.length} students registered`} />
 
         <main className="p-8 flex-1 overflow-auto space-y-6">
