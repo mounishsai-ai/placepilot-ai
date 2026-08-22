@@ -108,6 +108,20 @@ body {
     box-shadow: 0 4px 15px rgba(16,185,129,0.35);
   }
 
+  .btn-ghost {
+    @apply px-4 py-2 rounded-lg font-medium text-white/60 transition-all duration-200;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.10);
+  }
+  .btn-ghost:hover {
+    @apply text-white;
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.18);
+  }
+  .btn-ghost:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+
   /* ── Status Badges ─────────────────────────────────────────────────── */
   .badge {
     @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold;

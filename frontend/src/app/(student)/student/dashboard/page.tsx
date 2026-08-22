@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Bell, Calendar, Zap, BookOpen } from "lucide-react";
+import { Bell, Calendar, Zap, BookOpen, Upload, FileText, ExternalLink } from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
 import { studentsAPI, notificationsAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
@@ -48,6 +48,8 @@ export default function StudentDashboard() {
   const [matches, setMatches] = useState<Record<string, unknown>[]>([]);
   const [notifications, setNotifications] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useStudentWebSocket(studentId);
 
@@ -78,6 +80,21 @@ export default function StudentDashboard() {
       setLoading(false);
     }
   }, []);
+
+  const handleResumeUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await studentsAPI.uploadResume(form);
+      setProfile(p => ({ ...p as Record<string, unknown>, resume_url: res.data.resume_url }));
+      toast.success("✅ Resume uploaded!");
+    } catch {
+      toast.error("Upload failed — check file size");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (user) fetchData();
@@ -136,17 +153,57 @@ export default function StudentDashboard() {
             ) : (
               <div className="space-y-3">
                 {[
-                  { label: "CGPA",         value: (profile as Record<string,unknown>)?.cgpa       },
-                  { label: "Branch",        value: (profile as Record<string,unknown>)?.branch     },
-                  { label: "Batch",         value: (profile as Record<string,unknown>)?.batch      },
-                  { label: "Active Backlogs", value: (profile as Record<string,unknown>)?.backlogs_active ?? 0 },
-                  { label: "Attendance",    value: `${(profile as Record<string,unknown>)?.attendance_pct ?? 0}%` },
+                  { label: "CGPA",            value: (profile as Record<string,unknown>)?.cgpa       },
+                  { label: "Branch",           value: (profile as Record<string,unknown>)?.branch     },
+                  { label: "Batch",            value: (profile as Record<string,unknown>)?.batch      },
+                  { label: "Active Backlogs",  value: (profile as Record<string,unknown>)?.backlogs_active ?? 0 },
+                  { label: "Attendance",       value: `${(profile as Record<string,unknown>)?.attendance_pct ?? 0}%` },
                 ].map(item => (
                   <div key={item.label} className="flex justify-between">
                     <span className="text-white/40 text-sm">{item.label}</span>
                     <span className="text-white font-semibold text-sm">{String(item.value ?? "—")}</span>
                   </div>
                 ))}
+
+                {/* Resume upload */}
+                <div className="pt-2 border-t border-white/[0.06]">
+                  {(profile as Record<string,unknown>)?.resume_url ? (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
+                        <FileText size={12} />
+                        <span>Resume uploaded</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`http://localhost:8000${(profile as Record<string,unknown>)?.resume_url as string}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-blue-400 text-xs flex items-center gap-1 hover:text-blue-300"
+                        >
+                          <ExternalLink size={11} /> View
+                        </a>
+                        <button onClick={() => fileRef.current?.click()} className="text-white/35 text-xs hover:text-white">
+                          Replace
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => fileRef.current?.click()}
+                      disabled={uploading}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-white/20 text-white/40 text-xs hover:text-white hover:border-white/40 transition-all"
+                    >
+                      {uploading ? <span className="animate-pulse">Uploading…</span> : <><Upload size={12} /> Upload Resume (PDF)</>}
+                    </button>
+                  )}
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".pdf,.docx,.doc"
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && handleResumeUpload(e.target.files[0])}
+                  />
+                </div>
               </div>
             )}
           </motion.div>
