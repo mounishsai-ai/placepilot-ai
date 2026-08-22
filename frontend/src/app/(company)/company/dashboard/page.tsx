@@ -74,7 +74,6 @@ export default function CompanyDashboard() {
     setAnalyzing(true);
     try {
       const createRes = await drivesAPI.create({
-        company_id: "company_001",
         title: driveTitle,
         jd_text: jdText,
       });

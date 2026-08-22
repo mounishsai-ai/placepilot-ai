@@ -86,11 +86,13 @@ export default function StudentDashboard() {
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await studentsAPI.uploadResume(form);
-      setProfile(p => ({ ...p as Record<string, unknown>, resume_url: res.data.resume_url }));
-      toast.success("✅ Resume uploaded!");
+      await studentsAPI.uploadResume(form);
+      // Re-fetch full profile so resume_url updates in UI
+      const meRes = await studentsAPI.getMe();
+      setProfile(meRes.data);
+      toast.success("✅ Resume uploaded successfully!");
     } catch {
-      toast.error("Upload failed — check file size");
+      toast.error("Upload failed — check file size (<10MB)");
     } finally {
       setUploading(false);
     }
@@ -233,6 +235,52 @@ export default function StudentDashboard() {
           </motion.div>
         </div>
 
+        {/* ── AI Skill Gap Advice ───────────────────────────────────────── */}
+        <div className="glass-card border border-purple-500/15">
+          <div className="flex items-center gap-2 mb-5">
+            <BookOpen size={16} className="text-purple-400" />
+            <h2 className="text-white font-semibold">AI Skill Gap Advice</h2>
+            <span className="badge badge-purple ml-2 text-[10px]">Gemini Powered</span>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              {
+                skill: "Data Structures & Algorithms",
+                priority: "High",
+                drives: 4,
+                tip: "Practice LeetCode Medium problems. Focus on arrays, trees, and dynamic programming.",
+                color: "border-rose-500/25 bg-rose-500/[0.04]",
+                badge: "badge-rose",
+              },
+              {
+                skill: "System Design",
+                priority: "Medium",
+                drives: 3,
+                tip: "Read 'Designing Data-Intensive Applications'. Practice designing URL shorteners, chat systems.",
+                color: "border-amber-500/25 bg-amber-500/[0.04]",
+                badge: "badge-amber",
+              },
+              {
+                skill: "Cloud (AWS/GCP)",
+                priority: "Medium",
+                drives: 3,
+                tip: "Get AWS Cloud Practitioner certified. Hands-on with S3, EC2, Lambda basics.",
+                color: "border-blue-500/25 bg-blue-500/[0.04]",
+                badge: "badge-blue",
+              },
+            ].map((item) => (
+              <div key={item.skill} className={`rounded-xl border p-4 ${item.color}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`badge text-[10px] ${item.badge}`}>{item.priority} Priority</span>
+                  <span className="text-white/30 text-[10px]">{item.drives} drives require this</span>
+                </div>
+                <div className="text-white font-semibold text-sm mb-2">{item.skill}</div>
+                <p className="text-white/45 text-xs leading-relaxed">{item.tip}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* ── Active Drives / Matches ──────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-6">
           <div className="glass-card">
@@ -338,51 +386,6 @@ export default function StudentDashboard() {
           </div>
         </div>
 
-        {/* ── AI Skill Gap Advice ───────────────────────────────────────── */}
-        <div className="glass-card border border-purple-500/15">
-          <div className="flex items-center gap-2 mb-5">
-            <BookOpen size={16} className="text-purple-400" />
-            <h2 className="text-white font-semibold">AI Skill Gap Advice</h2>
-            <span className="badge badge-purple ml-2 text-[10px]">Gemini Powered</span>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              {
-                skill: "Data Structures & Algorithms",
-                priority: "High",
-                drives: 4,
-                tip: "Practice LeetCode Medium problems. Focus on arrays, trees, and dynamic programming.",
-                color: "border-rose-500/25 bg-rose-500/[0.04]",
-                badge: "badge-rose",
-              },
-              {
-                skill: "System Design",
-                priority: "Medium",
-                drives: 3,
-                tip: "Read 'Designing Data-Intensive Applications'. Practice designing URL shorteners, chat systems.",
-                color: "border-amber-500/25 bg-amber-500/[0.04]",
-                badge: "badge-amber",
-              },
-              {
-                skill: "Cloud (AWS/GCP)",
-                priority: "Medium",
-                drives: 3,
-                tip: "Get AWS Cloud Practitioner certified. Hands-on with S3, EC2, Lambda basics.",
-                color: "border-blue-500/25 bg-blue-500/[0.04]",
-                badge: "badge-blue",
-              },
-            ].map((item) => (
-              <div key={item.skill} className={`rounded-xl border p-4 ${item.color}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`badge text-[10px] ${item.badge}`}>{item.priority} Priority</span>
-                  <span className="text-white/30 text-[10px]">{item.drives} drives require this</span>
-                </div>
-                <div className="text-white font-semibold text-sm mb-2">{item.skill}</div>
-                <p className="text-white/45 text-xs leading-relaxed">{item.tip}</p>
-              </div>
-            ))}
-          </div>
-        </div>
       </main>
     </div>
   );

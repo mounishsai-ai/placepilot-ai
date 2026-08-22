@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db, async_session_factory
 from app.models import (
     PlacementDrive, DriveStatus, Company, EligibilityRule,
-    EligibilityResult, MatchScore, Student, AgentEvent, UserRole
+    EligibilityResult, MatchScore, Student, AgentEvent, UserRole, User
 )
 from app.api.auth import get_current_user, require_role
 from app.agents.supervisor import run_placement_pipeline, resume_pipeline
@@ -27,7 +27,7 @@ router = APIRouter()
 # ─── Schemas ─────────────────────────────────────────────────────────────────
 
 class CreateDriveRequest(BaseModel):
-    company_id: str
+    company_id: Optional[str] = None   # auto-resolved from JWT if COMPANY role
     title: str
     jd_text: Optional[str] = None
     deadline: Optional[str] = None
@@ -171,10 +171,26 @@ async def _run_pipeline_bg(drive_id: str):
 async def create_drive(
     body: CreateDriveRequest,
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
+    current_user: User = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
 ):
+    company_id = body.company_id
+
+    # Auto-resolve company from the logged-in user's email if not explicitly provided
+    if not company_id:
+        company_res = await db.execute(
+            select(Company).where(Company.email == current_user.email)
+        )
+        company = company_res.scalar_one_or_none()
+        if company:
+            company_id = company.id
+        else:
+            # Find any company as fallback (demo mode)
+            any_co = await db.execute(select(Company).limit(1))
+            co = any_co.scalar_one_or_none()
+            company_id = co.id if co else None
+
     drive = PlacementDrive(
-        company_id=body.company_id,
+        company_id=company_id,
         title=body.title,
         jd_text=body.jd_text,
     )
