@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 import os, uuid, aiofiles
+from datetime import datetime
 
 from app.database import get_db
-from app.models import Student, StudentSkill, InterviewSlot, MatchScore, UserRole, User
+from app.models import Student, StudentSkill, InterviewSlot, MatchScore, PlacementDrive, UserRole, User
 from app.api.auth import get_current_user, require_role
 from app.config import settings
 
@@ -71,7 +72,7 @@ async def get_my_profile(
     # Also fetch matches for this student
     matches_result = await db.execute(
         select(MatchScore)
-        .options(selectinload(MatchScore.drive))
+        .options(selectinload(MatchScore.drive).selectinload(PlacementDrive.company))
         .where(MatchScore.student_id == student.id)
         .order_by(MatchScore.score.desc())
         .limit(10)
@@ -91,6 +92,7 @@ async def get_my_profile(
         "backlogs_historical": student.backlogs_historical,
         "attendance_pct": student.attendance_pct,
         "resume_url": student.resume_url,
+        "resume_uploaded_at": student.resume_uploaded_at.isoformat() if student.resume_uploaded_at else None,
         "linkedin_url": student.linkedin_url,
         "github_url": student.github_url,
         "placement_readiness_score": student.placement_readiness_score,
@@ -177,8 +179,14 @@ async def upload_my_resume(
         await f.write(content)
 
     student.resume_url = f"/uploads/{filename}"
+    student.resume_uploaded_at = datetime.utcnow()
     await db.commit()
-    return {"resume_url": student.resume_url, "filename": filename, "size_mb": round(size_mb, 2)}
+    return {
+        "resume_url": student.resume_url,
+        "resume_uploaded_at": student.resume_uploaded_at.isoformat(),
+        "filename": filename,
+        "size_mb": round(size_mb, 2),
+    }
 
 
 @router.get("/")
@@ -234,6 +242,7 @@ async def get_student(
         "backlogs_historical": student.backlogs_historical,
         "attendance_pct": student.attendance_pct,
         "resume_url": student.resume_url,
+        "resume_uploaded_at": student.resume_uploaded_at.isoformat() if student.resume_uploaded_at else None,
         "linkedin_url": student.linkedin_url, "github_url": student.github_url,
         "placement_readiness_score": student.placement_readiness_score,
         "skills_summary": student.skills_summary,
@@ -306,8 +315,9 @@ async def upload_resume(
         await f.write(await file.read())
 
     student.resume_url = f"/uploads/{filename}"
+    student.resume_uploaded_at = datetime.utcnow()
     await db.commit()
-    return {"resume_url": student.resume_url}
+    return {"resume_url": student.resume_url, "resume_uploaded_at": student.resume_uploaded_at.isoformat()}
 
 
 @router.get("/{student_id}/schedule")

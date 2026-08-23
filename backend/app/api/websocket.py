@@ -78,11 +78,17 @@ async def student_ws(websocket: WebSocket, student_id: str):
 
 # ─── Utility functions (called from other parts of the app) ──────────────────
 
-async def emit_agent_event(event_type: str, payload: dict, drive_id: Optional[str] = None):
+async def emit_agent_event(
+    event_type: str,
+    payload: dict,
+    drive_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+):
     """Broadcast an agent event to the TPO dashboard."""
     await manager.broadcast("tpo_dashboard", {
         "type": "agent_event",
         "event_type": event_type,
+        "agent_name": agent_name,
         "drive_id": drive_id,
         "payload": payload,
     })

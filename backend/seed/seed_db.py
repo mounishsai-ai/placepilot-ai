@@ -77,6 +77,8 @@ async def seed():
                 id=c["id"], name=c["name"],
                 sector=c.get("sector"), website=c.get("website"),
             )
+            if c["id"] == "company_001":  # TCS Digital — linked to hr@tcs.com demo login
+                company.user_id = "user_company_01"
             db.add(company)
 
         # ── Panel members ────────────────────────────────────────────────────

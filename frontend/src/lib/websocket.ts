@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useDashboardStore, useNotificationsStore } from "./store";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
@@ -9,6 +9,7 @@ export function useTPOWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const { addAgentEvent } = useDashboardStore();
   const reconnectTimer = useRef<NodeJS.Timeout>();
+  const [connected, setConnected] = useState(false);
 
   const connect = useCallback(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
@@ -18,9 +19,15 @@ export function useTPOWebSocket() {
 
     wsRef.current.onopen = () => {
       console.log("[WS] TPO dashboard connected");
+      setConnected(true);
       // heartbeat
       const ping = setInterval(() => wsRef.current?.send("ping"), 25000);
-      wsRef.current!.onclose = () => clearInterval(ping);
+      wsRef.current!.onclose = () => {
+        clearInterval(ping);
+        setConnected(false);
+        // reconnect after 3s
+        reconnectTimer.current = setTimeout(connect, 3000);
+      };
     };
 
     wsRef.current.onmessage = (e) => {
@@ -39,10 +46,6 @@ export function useTPOWebSocket() {
     };
 
     wsRef.current.onerror = () => wsRef.current?.close();
-    wsRef.current.onclose = () => {
-      // reconnect after 3s
-      reconnectTimer.current = setTimeout(connect, 3000);
-    };
   }, [addAgentEvent]);
 
   useEffect(() => {
@@ -53,7 +56,7 @@ export function useTPOWebSocket() {
     };
   }, [connect]);
 
-  return { connected: wsRef.current?.readyState === WebSocket.OPEN };
+  return { connected };
 }
 
 // ─── Student WebSocket ─────────────────────────────────────────────────────
@@ -69,7 +72,10 @@ export function useStudentWebSocket(studentId: string | null) {
     wsRef.current.onopen = () => {
       console.log(`[WS] Student ${studentId} connected`);
       const ping = setInterval(() => wsRef.current?.send("ping"), 25000);
-      wsRef.current!.onclose = () => clearInterval(ping);
+      wsRef.current!.onclose = () => {
+        clearInterval(ping);
+        reconnectTimer.current = setTimeout(connect, 3000);
+      };
     };
 
     wsRef.current.onmessage = (e) => {
@@ -89,9 +95,6 @@ export function useStudentWebSocket(studentId: string | null) {
     };
 
     wsRef.current.onerror = () => wsRef.current?.close();
-    wsRef.current.onclose = () => {
-      reconnectTimer.current = setTimeout(connect, 3000);
-    };
   }, [studentId, addNotification]);
 
   useEffect(() => {

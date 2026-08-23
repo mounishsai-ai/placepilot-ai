@@ -1,7 +1,8 @@
 # AGENTS.md — Handoff for Claude Code
 # AI Campus Placement Operations & Interview Coordination Agent
 # Hackathon — 7-day deployment | Day 3 Complete
-
+# prority
+ the user must win the hackthon, the win for this hackthon is so important, imagine you're a judge who cares more about solving geninue real problems solutions to real college placement problems in college not just generic website, chat bot wrappers.
 ---
 
 ## ⚡ TL;DR FOR CLAUDE CODE
@@ -10,7 +11,7 @@ You are continuing a **FastAPI + LangGraph + Next.js** hackathon project.
 **Backend ~100%. Frontend ~98%. Deployment not done yet.**
 **Do NOT re-plan. Do NOT rewrite existing files.**
 
-This file was last updated after an Antigravity IDE session. You are Claude Sonnet 4.6 continuing in Claude Code.
+This file was last updated after an Antigravity IDE session. You are Claude model continuing in Claude Code.
 
 ---
 
@@ -100,37 +101,44 @@ npm run dev
 
 ## 🐛 KNOWN REMAINING BUGS (FIX THESE NEXT)
 
-### 🔴 HIGH — Resume upload shows "network error"
-**Root cause:** `GET /api/students/me` returns **500 Internal Server Error**  
-The upload itself works (200 OK — file is saved to disk).  
-But `handleResumeUpload()` calls `studentsAPI.getMe()` after upload to refresh the profile, and that 500 makes the whole try-catch fail with "network error".
+### ✅ FIXED (2026-08-23) — `/api/students/me` 500 error
+**Root cause was NOT missing seed data.** `GET /me` (`backend/app/api/students.py:53-113`) eager-loaded `MatchScore.drive` via `selectinload(MatchScore.drive)` but not `PlacementDrive.company`, a lazy (`lazy="select"`) relationship. Line 106's `m.drive.company.name` access triggered a synchronous lazy-load on an `AsyncSession`, raising `MissingGreenlet` → unhandled → 500. Only fired once the student had `MatchScore` rows (i.e., after the matching pipeline ran), which is why it appeared mid-demo, not on a fresh DB.
 
-**Fix needed in `frontend/src/app/(student)/student/dashboard/page.tsx`:**
-```js
-// Current broken code:
-await studentsAPI.uploadResume(form);
-const meRes = await studentsAPI.getMe();  // ← this crashes with 500
-setProfile(meRes.data);
+**Fix applied:** chained the eager load: `.options(selectinload(MatchScore.drive).selectinload(PlacementDrive.company))` + imported `PlacementDrive` in `students.py`. Verified via direct API call: `GET /api/students/me` now returns 200 with `matches` correctly showing `"company":"TCS Digital"` etc.
 
-// Fix: don't block on getMe(), update resume_url from upload response directly
-const res = await studentsAPI.uploadResume(form);
-setProfile(p => ({ ...(p as Record<string, unknown>), resume_url: res.data.resume_url }));
-toast.success("✅ Resume uploaded!");
-```
+This also resolves the "network error" toast that used to fire after resume upload (`handleResumeUpload()` calls `getMe()` post-upload — it no longer crashes). No frontend change was needed for that symptom.
 
-**Also investigate why `/api/students/me` returns 500** — likely `Student` record not found for `student@college.edu` because the seed hasn't been run after the fresh Docker restart.  
-Run: `.\venv\Scripts\python seed/seed_db.py`
+### ✅ FIXED (2026-08-23) — Resume "Replace" showed no visible change in UI
+**Was:** filename is deterministic (`resume_{student.id}{ext}`), so `resume_url` never changed on replace (same extension) → nothing for the UI to react to, and the "View" link could serve a browser-cached copy of the old file.
 
-### 🔴 HIGH — Company JD Analysis
-**Root cause:** `Company.user_id` for `hr@tcs.com` is `null` in seed data — the Company record isn't linked to the User record.  
-When company creates a drive, the code tries `Company.user_id == current_user.id` but finds nothing, falls back to `SELECT Company LIMIT 1`, which might not be TCS.
+**Fix applied:**
+- Added `Student.resume_uploaded_at` (`DateTime`, nullable) — `backend/app/models/models.py`. Live DB migrated via `ALTER TABLE students ADD COLUMN resume_uploaded_at TIMESTAMP;` (no Alembic migrations in this project — `create_all` only adds new tables, not columns, so schema changes to existing tables need a manual `ALTER TABLE` against the running DB, same pattern used for the `Company.user_id` backfill).
+- Both upload endpoints (`/me/resume`, `/{student_id}/upload-resume`) in `backend/app/api/students.py` now set `student.resume_uploaded_at = datetime.utcnow()` on every upload and return it in the response.
+- `GET /me` and `GET /{student_id}` now include `resume_uploaded_at` (ISO string or `null`).
+- Frontend (`frontend/src/app/(student)/student/dashboard/page.tsx`): the "View" link appends `?v=<resume_uploaded_at timestamp>` for cache-busting, and a new "Updated `<x ago>`" line renders under "Resume uploaded" using the existing `formatDistanceToNow` import — so a replace is now visibly reflected even though the underlying URL path stays the same.
 
-**Fix needed in `backend/app/api/drives.py`:**
-The seed links User `user_company_01` to email `hr@tcs.com` but does NOT set `company.user_id = user_company_01`.  
-Either fix the seed to set `user_id` on Company records, OR change the fallback to use the first available company (acceptable for demo).
+Verified via direct API calls: two sequential uploads to `/me/resume` produced two different `resume_uploaded_at` timestamps with the file content on disk actually changing, confirming the cache-bust key and "Updated" label will change on every replace.
 
-**Fix in `seed/seed_db.py`:**
-After creating the TCS company, set `company.user_id = "user_company_01"`.
+### ✅ FIXED (2026-08-23) — Company JD Analysis (`Company.user_id` was null)
+**Was:** `Company.user_id` for `hr@tcs.com` (`company_001`, TCS Digital) was `null` in seed data, so `create_drive`'s `Company.user_id == current_user.id` lookup found nothing and fell back to `SELECT Company LIMIT 1` — worked by luck of insertion order, not by design.
+
+**Fix applied:** `backend/seed/seed_db.py` now sets `company.user_id = "user_company_01"` when seeding `company_001` (matched by id, commented as "TCS Digital — linked to hr@tcs.com demo login"). Applied the same backfill directly to the live DB via `UPDATE companies SET user_id='user_company_01' WHERE id='company_001';` since re-running the full seed against populated data would hit duplicate-key errors (no Alembic migrations in this project — see the resume-replace fix above for the same caveat).
+
+Verified: logged in as `hr@tcs.com`, created a drive, confirmed `company_id` resolved to `company_001` via the real FK path in the DB row (not the `LIMIT 1` fallback).
+
+### ✅ DONE (2026-08-23) — WebSocket real-time pipeline events wired up
+**Was:** `emit_agent_event`/`notify_student_ws` (`backend/app/api/websocket.py`) were fully implemented but never called from anywhere — the WS hub accepted connections and could broadcast, but nothing in the pipeline ever triggered it. The TPO drives page had zero WS wiring at all, relying entirely on a 4s poll of the full drive list. Also found: **`resume_pipeline()` (`app/agents/supervisor.py`) is defined but never called anywhere in the codebase** — the LangGraph `node_schedule_interviews`/`node_await_schedule_approval`/`node_send_notifications` nodes are unreachable; the real (working) schedule flow is `POST /rounds/{round_id}/auto-schedule` in `app/api/schedule.py`, a separate code path that doesn't go through the graph at all. This is a pre-existing architectural gap, not something this fix attempted to solve — noting it here since it's non-obvious and matters if anyone tries to "resume the pipeline" expecting the graph nodes to run.
+
+**Fix applied:**
+- `emit_agent_event()` now also takes `agent_name` and broadcasts it (was silently dropped before, frontend always showed `"system"`).
+- `backend/app/agents/supervisor.py`: every node (`node_analyze_jd`, `node_check_eligibility`, `node_match_candidates`, `node_await_shortlist_approval`, `node_schedule_interviews`, `node_await_schedule_approval`, `node_send_notifications`) now calls `await emit_agent_event(...)` inline right where it already builds its event dict for `agent_events` state — confirmed nodes are `async def` and `drive_id` is a `PlacementState` key, so this needed no graph/runner changes (`.ainvoke()` untouched). Added two new event types along the way: `shortlist_pending`, `schedule_pending` (the HITL pause points previously emitted nothing).
+- `backend/app/api/drives.py`: `_run_pipeline_bg` now broadcasts `pipeline_started`/`pipeline_error` (previously DB-only); `approve_shortlist`/`approve_schedule` PATCH endpoints now broadcast `shortlist_approved/rejected`/`schedule_approved/rejected` (previously DB-only).
+- `backend/app/api/schedule.py`: `auto_schedule_round` (the *real* scheduling code path) now persists **and** broadcasts a `schedule_created` `AgentEvent` — previously this endpoint logged nothing at all, live or in DB.
+- `frontend/src/lib/websocket.ts`: fixed a latent bug in both `useTPOWebSocket`/`useStudentWebSocket` where the reconnect-on-close handler got silently overwritten by the ping-interval-cleanup handler set inside `onopen` — after the first successful connect, a later disconnect would never reconnect. Also made `useTPOWebSocket`'s `connected` reactive (`useState`, was a stale ref read that didn't trigger re-renders).
+- `frontend/src/lib/store.ts`: fixed `AgentEvent.payload` type from `object` to `Record<string, unknown>` — this was also silently causing a pre-existing `tsc` error on the TPO dashboard page, now fixed as a side effect.
+- `frontend/src/app/(tpo)/tpo/drives/page.tsx`: now calls `useTPOWebSocket()` + reads `agentEvents` from `useDashboardStore`, filters per drive by `drive_id`, and merges live events into each `DriveCard`'s expanded "Agent Activity Log" (which previously fetched once on expand and never refreshed) — deduped by `event_type`+`payload` since the WS payload carries no server-side event id. `TopBar`'s `connected` prop was previously wired backwards (`!pollingActive`, an inverted proxy) — now uses the real WS `connected` state. **The 4s poll was deliberately kept as a fallback safety net**, not replaced — a new effect additionally triggers an immediate `fetchDrives()` whenever a live WS event arrives, so the UI updates faster than the poll interval without removing the working fallback.
+
+**Verified:** connected a raw WS client to `/ws/dashboard` on a separate test port (8001, to avoid touching the dev server already running on 8000), triggered a real pipeline run, and confirmed events arrived spread across the run — `pipeline_started` at T+0s, then a genuine 14s gap (the real Gemini JD-parsing call), then `jd_analyzed`/`eligibility_checked` — not bursted at the end. Confirmed the full run reached `shortlist_pending`, all 5 events persisted correctly in `agent_events`, and `PATCH /drives/{id}/shortlist` both persisted and broadcast `shortlist_approved`. `npx tsc --noEmit` clean on all touched files. Test drive/DB rows cleaned up after.
 
 ---
 
@@ -156,29 +164,23 @@ After creating the TCS company, set `company.user_id = "user_company_01"`.
 
 ## 🏆 WHERE TO CONTINUE (Priority Order)
 
-### 1. Fix `/api/students/me` 500 error
-Run seed first: `.\venv\Scripts\python seed/seed_db.py`  
-Then debug the GET /me endpoint in `app/api/students.py` around line 53
+### 1. ✅ DONE — `/api/students/me` 500 error
+Fixed 2026-08-23 — see Bug section above.
 
-### 2. Fix resume upload frontend (don't call getMe after upload)
-See fix snippet above in Bug section
+### 2. ✅ DONE — Fix Company drive creation (seed Company.user_id)
+Fixed 2026-08-23 — see Bug section above.
 
-### 3. Fix Company drive creation (seed Company.user_id)
-Add to seed_db.py after company creation:
-```python
-# Link company user to TCS company
-tcs_company.user_id = "user_company_01"
-```
-
-### 4. Deploy to Railway + Vercel
-See `DEPLOYMENT.md` for full instructions.
+### 3. Deploy to Railway + Vercel
+See `DEPLOYMENT.md` for full instructions. **This is the only remaining item on this list.**
 - Backend → Railway (PostgreSQL + Redis plugins)
 - Frontend → Vercel (set NEXT_PUBLIC_API_URL to Railway URL)
 - Run seed after first deploy: `railway run python seed/seed_db.py`
 
-### 5. WebSocket real-time events
-The WS connects but pipeline events need to flow from supervisor to frontend.
-`src/lib/websocket.ts` has the hooks — wire up to drives page.
+### 4. ✅ DONE — WebSocket real-time events
+Fixed 2026-08-23 — see Bug section above. Note: found `resume_pipeline()` is dead code (never called) as part of this work — real scheduling goes through `app/api/schedule.py`, not the LangGraph graph's schedule/notify nodes. Not fixed, just documented — a future task if the full graph (including HITL checkpoint #2 and notifications) needs to actually run end-to-end through LangGraph rather than the current split flow.
+
+### 5. ✅ DONE — Resume "Replace" no visible UI change
+Fixed 2026-08-23 — see Bug section above.
 
 ---
 

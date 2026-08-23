@@ -14,7 +14,7 @@ interface AgentEvent {
   event_type: string;
   agent_name: string;
   drive_id?: string;
-  payload?: object;
+  payload?: Record<string, unknown>;
   created_at: string;
 }
 
