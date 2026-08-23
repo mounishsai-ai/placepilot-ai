@@ -15,7 +15,6 @@ build/
 # Data dirs
 chroma_db/
 uploads/
-seed/data.json
 credentials/
 
 # Logs

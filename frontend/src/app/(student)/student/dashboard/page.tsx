@@ -174,13 +174,24 @@ export default function StudentDashboard() {
                 <div className="pt-2 border-t border-white/[0.06]">
                   {(profile as Record<string,unknown>)?.resume_url ? (
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
-                        <FileText size={12} />
-                        <span>Resume uploaded</span>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
+                          <FileText size={12} />
+                          <span>Resume uploaded</span>
+                        </div>
+                        {typeof (profile as Record<string,unknown>)?.resume_uploaded_at === "string" && (
+                          <span className="text-white/30 text-[10px] pl-[18px]">
+                            Updated {formatDistanceToNow(new Date((profile as Record<string,unknown>).resume_uploaded_at as string), { addSuffix: true })}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <a
-                          href={`http://localhost:8000${(profile as Record<string,unknown>)?.resume_url as string}`}
+                          href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}${(profile as Record<string,unknown>)?.resume_url as string}${
+                            (profile as Record<string,unknown>)?.resume_uploaded_at
+                              ? `?v=${new Date((profile as Record<string,unknown>).resume_uploaded_at as string).getTime()}`
+                              : ""
+                          }`}
                           target="_blank"
                           rel="noreferrer"
                           className="text-blue-400 text-xs flex items-center gap-1 hover:text-blue-300"

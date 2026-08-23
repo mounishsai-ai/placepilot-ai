@@ -9,6 +9,8 @@ import {
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import { drivesAPI } from "@/lib/api";
+import { useTPOWebSocket } from "@/lib/websocket";
+import { useDashboardStore } from "@/lib/store";
 import toast from "react-hot-toast";
 import { useRouter } from "next/navigation";
 
@@ -43,7 +45,8 @@ interface ShortlistCandidate {
 interface AgentEvent {
   event_type: string;
   agent_name: string;
-  payload: Record<string, unknown>;
+  drive_id?: string;
+  payload?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -335,21 +338,23 @@ function DriveCard({
   drive,
   onRunPipeline,
   onReviewShortlist,
+  liveEvents,
 }: {
   drive: Drive;
   onRunPipeline: (id: string) => void;
   onReviewShortlist: (id: string) => void;
+  liveEvents: AgentEvent[];
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [events, setEvents] = useState<AgentEvent[]>([]);
+  const [fetchedEvents, setFetchedEvents] = useState<AgentEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
 
   const loadEvents = async () => {
-    if (events.length > 0) return;
+    if (fetchedEvents.length > 0) return;
     setLoadingEvents(true);
     try {
       const res = await drivesAPI.getEvents(drive.id);
-      setEvents(res.data);
+      setFetchedEvents(res.data);
     } catch {}
     setLoadingEvents(false);
   };
@@ -359,15 +364,32 @@ function DriveCard({
     setExpanded(!expanded);
   };
 
+  // Merge DB history (oldest→newest) with live WS events not yet in that history,
+  // deduped by event_type+payload since the WS payload carries no server-side event id.
+  const newLiveEvents = liveEvents
+    .slice()
+    .reverse() // store prepends newest-first; render oldest→newest to match fetched order
+    .filter(
+      (le) =>
+        !fetchedEvents.some(
+          (fe) => fe.event_type === le.event_type && JSON.stringify(fe.payload) === JSON.stringify(le.payload)
+        )
+    );
+  const events = [...fetchedEvents, ...newLiveEvents];
+
   const EVENT_ICON: Record<string, string> = {
     pipeline_started:    "🚀",
     jd_analyzed:         "🧠",
     eligibility_checked: "✅",
     matching_complete:   "🔍",
-    schedule_created:    "📅",
-    notifications_queued: "📨",
+    shortlist_pending:   "⏸️",
     shortlist_approved:  "👍",
+    shortlist_rejected:  "👎",
+    schedule_created:    "📅",
+    schedule_pending:    "⏸️",
     schedule_approved:   "✅",
+    schedule_rejected:   "↩️",
+    notifications_queued: "📨",
     pipeline_error:      "❌",
   };
 
@@ -502,6 +524,8 @@ export default function DrivesPage() {
   const [shortlistDriveId, setShortlistDriveId] = useState<string | null>(null);
   const [shortlistCandidates, setShortlistCandidates] = useState<ShortlistCandidate[]>([]);
   const [pollingActive, setPollingActive] = useState(false);
+  const { connected } = useTPOWebSocket();
+  const { agentEvents } = useDashboardStore();
 
   const ACTIVE_STATUSES = ["jd_analyzed", "eligibility_checked", "matched"];
 
@@ -523,12 +547,19 @@ export default function DrivesPage() {
   // Initial load
   useEffect(() => { fetchDrives(); }, [fetchDrives]);
 
-  // Auto-poll every 4s while pipeline is running
+  // Auto-poll every 4s while pipeline is running (safety net if WS drops)
   useEffect(() => {
     if (!pollingActive) return;
     const interval = setInterval(fetchDrives, 4000);
     return () => clearInterval(interval);
   }, [pollingActive, fetchDrives]);
+
+  // Live WS events refresh the list immediately instead of waiting on the poll
+  useEffect(() => {
+    if (agentEvents.length === 0) return;
+    fetchDrives();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentEvents[0]]);
 
   const handleRunPipeline = async (id: string) => {
     setRunningId(id);
@@ -572,7 +603,7 @@ export default function DrivesPage() {
             ? "🔄 Pipeline running — auto-refreshing every 4s…"
             : "Manage drives and AI pipeline execution"
           }
-          connected={!pollingActive}
+          connected={connected}
         />
 
         <main className="p-8 space-y-6">
@@ -611,6 +642,7 @@ export default function DrivesPage() {
                   drive={drive}
                   onRunPipeline={handleRunPipeline}
                   onReviewShortlist={handleReviewShortlist}
+                  liveEvents={agentEvents.filter((e) => e.drive_id === drive.id)}
                 />
               ))}
             </div>

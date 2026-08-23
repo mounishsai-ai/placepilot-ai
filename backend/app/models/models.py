@@ -103,6 +103,7 @@ class Student(Base):
     backlogs_historical = Column(Integer, default=0)
     attendance_pct = Column(Float, default=100.0)
     resume_url = Column(String)
+    resume_uploaded_at = Column(DateTime, nullable=True)
     linkedin_url = Column(String)
     github_url = Column(String)
     placement_readiness_score = Column(Float)     # AI computed 0-100

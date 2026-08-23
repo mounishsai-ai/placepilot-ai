@@ -12,9 +12,10 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import (
     InterviewRound, InterviewSlot, Room, PanelMember,
-    PanelAvailability, PlacementDrive, RoundType, UserRole
+    PanelAvailability, PlacementDrive, RoundType, UserRole, AgentEvent
 )
 from app.api.auth import get_current_user, require_role
+from app.api.websocket import emit_agent_event
 from app.agents.scheduler_agent import allocate_slots, detect_all_conflicts
 
 router = APIRouter()
@@ -115,7 +116,16 @@ async def auto_schedule_round(
         )
         db.add(slot)
 
+    payload = {"scheduled": len(allocated), "conflicts": len(conflicts)}
+    db.add(AgentEvent(
+        drive_id=round_.drive_id, event_type="schedule_created",
+        agent_name="scheduler_agent", payload=payload,
+    ))
     await db.commit()
+    await emit_agent_event(
+        "schedule_created", payload,
+        drive_id=round_.drive_id, agent_name="scheduler_agent",
+    )
     return {
         "scheduled": len(allocated),
         "conflicts": conflicts,

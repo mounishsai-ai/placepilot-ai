@@ -15,6 +15,7 @@ from app.models import (
     EligibilityResult, MatchScore, Student, AgentEvent, UserRole, User
 )
 from app.api.auth import get_current_user, require_role
+from app.api.websocket import emit_agent_event
 from app.agents.supervisor import run_placement_pipeline, resume_pipeline
 from app.config import settings
 from loguru import logger
@@ -111,6 +112,10 @@ async def _run_pipeline_bg(drive_id: str):
                 agent_name="supervisor", payload={"drive": drive.title}
             ))
             await db.commit()
+            await emit_agent_event(
+                "pipeline_started", {"drive": drive.title},
+                drive_id=drive_id, agent_name="supervisor",
+            )
 
             state = await run_placement_pipeline(drive_id, drive.jd_text, students, rules)
 
@@ -161,6 +166,10 @@ async def _run_pipeline_bg(drive_id: str):
                     agent_name="supervisor", payload={"error": str(e)[:500]}
                 ))
                 await db.commit()
+                await emit_agent_event(
+                    "pipeline_error", {"error": str(e)[:500]},
+                    drive_id=drive_id, agent_name="supervisor",
+                )
             except Exception:
                 pass
 
@@ -349,15 +358,17 @@ async def approve_shortlist(
         DriveStatus.SHORTLIST_APPROVED if body.approved else DriveStatus.MATCHED
     )
 
+    event_type = "shortlist_approved" if body.approved else "shortlist_rejected"
     ae = AgentEvent(
         drive_id=drive_id,
-        event_type="shortlist_approved" if body.approved else "shortlist_rejected",
+        event_type=event_type,
         agent_name="human_tpo",
         payload={"notes": body.notes},
         actor="tpo",
     )
     db.add(ae)
     await db.commit()
+    await emit_agent_event(event_type, {"notes": body.notes}, drive_id=drive_id, agent_name="human_tpo")
     return {"message": "Shortlist updated", "status": drive.status.value}
 
 
@@ -372,15 +383,17 @@ async def approve_schedule(
     drive = await _get_drive_or_404(drive_id, db)
     drive.status = DriveStatus.SCHEDULED if body.approved else DriveStatus.SHORTLIST_APPROVED
 
+    event_type = "schedule_approved" if body.approved else "schedule_rejected"
     ae = AgentEvent(
         drive_id=drive_id,
-        event_type="schedule_approved" if body.approved else "schedule_rejected",
+        event_type=event_type,
         agent_name="human_tpo",
         payload={"notes": body.notes},
         actor="tpo",
     )
     db.add(ae)
     await db.commit()
+    await emit_agent_event(event_type, {"notes": body.notes}, drive_id=drive_id, agent_name="human_tpo")
     return {"message": "Schedule decision recorded", "status": drive.status.value}
 
 

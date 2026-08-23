@@ -17,6 +17,7 @@ from app.agents.matcher_agent import (
     generate_all_explanations,
 )
 from app.agents.scheduler_agent import allocate_slots, build_schedule_summary
+from app.api.websocket import emit_agent_event
 
 
 # ─── Shared Graph State ───────────────────────────────────────────────────────
@@ -43,18 +44,24 @@ class PlacementState(TypedDict):
 
 # ─── Node Implementations ─────────────────────────────────────────────────────
 
+async def _emit(state: PlacementState, event_type: str, agent_name: str, payload: dict) -> dict:
+    """Append an event to graph state AND broadcast it live over WS in one step."""
+    event = {"event_type": event_type, "agent_name": agent_name, "payload": payload}
+    await emit_agent_event(event_type, payload, drive_id=state["drive_id"], agent_name=agent_name)
+    return event
+
+
 async def node_analyze_jd(state: PlacementState) -> dict:
     logger.info(f"[{state['drive_id']}] JD Analyst started")
     try:
         jd_parsed = await analyze_jd(state["jd_text"])
+        event = await _emit(state, "jd_analyzed", "jd_analyst", {
+            "role": jd_parsed.get("role"), "package": jd_parsed.get("package_lpa"),
+        })
         return {
             "jd_parsed": jd_parsed,
             "current_step": "jd_analyzed",
-            "agent_events": state.get("agent_events", []) + [{
-                "event_type": "jd_analyzed",
-                "agent_name": "jd_analyst",
-                "payload": {"role": jd_parsed.get("role"), "package": jd_parsed.get("package_lpa")},
-            }],
+            "agent_events": state.get("agent_events", []) + [event],
         }
     except Exception as e:
         return {"error": str(e), "current_step": "error"}
@@ -69,19 +76,16 @@ async def node_check_eligibility(state: PlacementState) -> dict:
     ]
     edge_cases = [r for r in results if r.get("is_edge_case")]
 
+    event = await _emit(state, "eligibility_checked", "eligibility_agent", {
+        "total": len(state["students"]),
+        "eligible": len(eligible),
+        "edge_cases": len(edge_cases),
+    })
     return {
         "eligibility_results": results,
         "eligible_students": eligible,
         "current_step": "eligibility_checked",
-        "agent_events": state.get("agent_events", []) + [{
-            "event_type": "eligibility_checked",
-            "agent_name": "eligibility_agent",
-            "payload": {
-                "total": len(state["students"]),
-                "eligible": len(eligible),
-                "edge_cases": len(edge_cases),
-            },
-        }],
+        "agent_events": state.get("agent_events", []) + [event],
     }
 
 
@@ -100,14 +104,13 @@ async def node_match_candidates(state: PlacementState) -> dict:
     students_by_id = {s["id"]: s for s in eligible}
     matches = await generate_all_explanations(matches, students_by_id, jd_parsed)
 
+    event = await _emit(state, "matching_complete", "matcher_agent", {
+        "candidates_ranked": len(matches),
+    })
     return {
         "match_results": matches,
         "current_step": "matched",
-        "agent_events": state.get("agent_events", []) + [{
-            "event_type": "matching_complete",
-            "agent_name": "matcher_agent",
-            "payload": {"candidates_ranked": len(matches)},
-        }],
+        "agent_events": state.get("agent_events", []) + [event],
     }
 
 
@@ -120,9 +123,13 @@ async def node_await_shortlist_approval(state: PlacementState) -> dict:
     logger.info(f"[{state['drive_id']}] ⏸ Awaiting TPO shortlist approval")
     # Top 20 students auto-shortlisted as suggestion
     suggested = [m["student_id"] for m in state["match_results"][:20]]
+    event = await _emit(state, "shortlist_pending", "supervisor", {
+        "suggested_count": len(suggested),
+    })
     return {
         "shortlisted_student_ids": suggested,
         "current_step": "shortlist_pending",
+        "agent_events": state.get("agent_events", []) + [event],
     }
 
 
@@ -150,36 +157,38 @@ async def node_schedule_interviews(state: PlacementState) -> dict:
     )
     summary = build_schedule_summary(allocated, conflicts)
 
+    event = await _emit(state, "schedule_created", "scheduler_agent", {
+        "scheduled": len(allocated), "conflicts": len(conflicts),
+    })
     return {
         "allocated_slots": allocated,
         "schedule_summary": summary,
         "current_step": "schedule_pending",
-        "agent_events": state.get("agent_events", []) + [{
-            "event_type": "schedule_created",
-            "agent_name": "scheduler_agent",
-            "payload": {"scheduled": len(allocated), "conflicts": len(conflicts)},
-        }],
+        "agent_events": state.get("agent_events", []) + [event],
     }
 
 
 async def node_await_schedule_approval(state: PlacementState) -> dict:
     """HUMAN-IN-THE-LOOP CHECKPOINT #2 — TPO confirms schedule."""
     logger.info(f"[{state['drive_id']}] ⏸ Awaiting TPO schedule confirmation")
-    return {"current_step": "schedule_pending"}
+    event = await _emit(state, "schedule_pending", "supervisor", {})
+    return {
+        "current_step": "schedule_pending",
+        "agent_events": state.get("agent_events", []) + [event],
+    }
 
 
 async def node_send_notifications(state: PlacementState) -> dict:
     logger.info(f"[{state['drive_id']}] Notifier Agent — sending interview invites")
     # Actual notification sending is handled by the Notifier service
     # This node queues the notification jobs
+    event = await _emit(state, "notifications_queued", "notifier_agent", {
+        "count": len(state["shortlisted_student_ids"]),
+    })
     return {
         "notifications_sent": True,
         "current_step": "completed",
-        "agent_events": state.get("agent_events", []) + [{
-            "event_type": "notifications_queued",
-            "agent_name": "notifier_agent",
-            "payload": {"count": len(state["shortlisted_student_ids"])},
-        }],
+        "agent_events": state.get("agent_events", []) + [event],
     }
 
 
