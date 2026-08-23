@@ -68,66 +68,20 @@ function PanelSidebar() {
   );
 }
 
-// ─── Demo Slots (shown when no real slots from API) ────────────────────────
-
-const DEMO_SLOTS = [
-  {
-    id: "slot_d01",
-    student_name: "Arjun Sharma",
-    student_roll: "2024CS0001",
-    branch: "CSE",
-    cgpa: 8.7,
-    match_score: 86,
-    slot_start: new Date(Date.now() + 30 * 60000).toISOString(),
-    slot_end: new Date(Date.now() + 60 * 60000).toISOString(),
-    room: "Interview Room 2",
-    round_type: "Technical",
-    result: null,
-  },
-  {
-    id: "slot_d02",
-    student_name: "Vikram Nair",
-    student_roll: "2024EC0112",
-    branch: "ECE",
-    cgpa: 9.64,
-    match_score: 91,
-    slot_start: new Date(Date.now() + 75 * 60000).toISOString(),
-    slot_end: new Date(Date.now() + 105 * 60000).toISOString(),
-    room: "Interview Room 2",
-    round_type: "Technical",
-    result: null,
-  },
-  {
-    id: "slot_d03",
-    student_name: "Priya Rajan",
-    student_roll: "2024IT0184",
-    branch: "IT",
-    cgpa: 8.61,
-    match_score: 74,
-    slot_start: new Date(Date.now() - 90 * 60000).toISOString(),
-    slot_end: new Date(Date.now() - 60 * 60000).toISOString(),
-    room: "Interview Room 3",
-    round_type: "Technical",
-    result: "selected",
-  },
-  {
-    id: "slot_d04",
-    student_name: "Rohan Mehta",
-    student_roll: "2024CS0083",
-    branch: "CSE",
-    cgpa: 7.28,
-    match_score: 62,
-    slot_start: new Date(Date.now() - 30 * 60000).toISOString(),
-    slot_end: new Date(Date.now()).toISOString(),
-    room: "Interview Room 3",
-    round_type: "Technical",
-    result: "rejected",
-  },
-];
-
-type Slot = typeof DEMO_SLOTS[number] & {
+interface Slot {
+  id: string;
+  student_name: string | null;
+  student_roll: string | null;
+  branch: string | null;
+  cgpa: number | null;
+  match_score: number | null;
+  slot_start: string;
+  slot_end: string;
+  room: string | null;
+  round_type: string | null;
+  status: string;
   result: string | null;
-};
+}
 
 const RESULT_OPTS = [
   { value: "selected", label: "Select",  icon: CheckCircle, color: "text-emerald-400", bg: "bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25" },
@@ -153,25 +107,22 @@ export default function PanelSchedulePage() {
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
 
   useEffect(() => {
-    scheduleAPI.getSlots("demo_round_id")
-      .then((r) => {
-        const data = Array.isArray(r.data) && r.data.length > 0 ? r.data : DEMO_SLOTS;
-        setSlots(data as Slot[]);
+    scheduleAPI.getMySlots()
+      .then((r) => setSlots(r.data))
+      .catch((err: unknown) => {
+        const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+        toast.error(msg ?? "Failed to load your interview schedule");
       })
-      .catch(() => setSlots(DEMO_SLOTS as Slot[]))
       .finally(() => setLoading(false));
   }, []);
 
   const handleResult = async (slotId: string, result: string) => {
     setSaving(slotId);
     try {
-      // Try API first, but skip for demo slots to prevent 404
-      if (!slotId.startsWith("slot_d")) {
-        await scheduleAPI.updateResult(slotId, {
-          result,
-          feedback: feedback[slotId] ?? "",
-        });
-      }
+      await scheduleAPI.updateResult(slotId, {
+        result,
+        feedback: feedback[slotId] ?? "",
+      });
       setSlots((prev) =>
         prev.map((s) => s.id === slotId ? { ...s, result, status: "completed" } : s)
       );
@@ -196,7 +147,7 @@ export default function PanelSchedulePage() {
     <div className="min-h-screen bg-cosmic flex">
       <PanelSidebar />
       <div className="ml-64 flex-1 flex flex-col">
-        <TopBar title="My Interview Schedule" subtitle="TCS Digital Drive · Technical Round" />
+        <TopBar title="My Interview Schedule" subtitle="All rounds you're assigned to, across drives" />
 
         <main className="p-8 space-y-6">
           {/* Stats */}
@@ -226,6 +177,10 @@ export default function PanelSchedulePage() {
           {loading ? (
             <div className="space-y-4">
               {[1, 2, 3].map(i => <div key={i} className="glass-card h-28 animate-pulse" />)}
+            </div>
+          ) : slots.length === 0 ? (
+            <div className="glass-card text-center py-12 text-white/30 text-sm">
+              No interviews assigned to you yet.
             </div>
           ) : (
             <div className="space-y-4">

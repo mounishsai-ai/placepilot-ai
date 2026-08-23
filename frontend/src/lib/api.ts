@@ -65,6 +65,7 @@ export const studentsAPI = {
   getMatches: (id: string) => api.get(`/api/students/${id}/matches`),
   uploadResume: (form: FormData) =>
     api.post("/api/students/me/resume", form),
+  getSkillAdvice: () => api.get("/api/students/me/skill-advice"),
 };
 
 // ─── Analytics ────────────────────────────────────────────────────────────
@@ -73,6 +74,8 @@ export const analyticsAPI = {
   skillGap: () => api.get("/api/analytics/skill-gap"),
   readiness: () => api.get("/api/analytics/readiness"),
   driveStats: (id: string) => api.get(`/api/analytics/drives/${id}`),
+  exceptions: () => api.get("/api/analytics/exceptions"),
+  auditTrail: () => api.get("/api/analytics/audit-trail"),
 };
 
 // ─── Schedule ─────────────────────────────────────────────────────────────
@@ -84,6 +87,10 @@ export const scheduleAPI = {
     api.get(`/api/schedule/rounds/${roundId}/slots`),
   updateResult: (slotId: string, data: object) =>
     api.patch(`/api/schedule/slots/${slotId}/result`, data),
+  listRounds: (driveId: string) => api.get(`/api/schedule/drives/${driveId}/rounds`),
+  listSlots: (driveId?: string) =>
+    api.get("/api/schedule/slots", { params: driveId ? { drive_id: driveId } : {} }),
+  getMySlots: () => api.get("/api/schedule/slots/mine"),
 };
 
 // ─── Notifications ────────────────────────────────────────────────────────

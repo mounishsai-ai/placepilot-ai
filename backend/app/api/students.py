@@ -3,10 +3,12 @@ Students API — CRUD, profile management, and skill tracking.
 """
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from jose import JWTError, jwt
 import os, uuid, aiofiles
 from datetime import datetime
 
@@ -16,6 +18,25 @@ from app.api.auth import get_current_user, require_role
 from app.config import settings
 
 router = APIRouter()
+
+_ALGORITHM = "HS256"
+
+
+async def _user_from_query_token(token: Optional[str], db: AsyncSession) -> Optional[User]:
+    """Resolve a JWT passed as a query param — used for the résumé download
+    link, which is a plain <a href> and can't set an Authorization header."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[_ALGORITHM])
+        user_id = payload.get("sub")
+    except JWTError:
+        return None
+    if not user_id:
+        return None
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    return user if user and user.is_active else None
 
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -39,6 +60,16 @@ class CreateStudentRequest(BaseModel):
     linkedin_url: Optional[str] = None
     github_url: Optional[str] = None
     skills: Optional[list[SkillIn]] = []
+
+async def _assert_student_access(student_id: str, current_user: User, db: AsyncSession) -> None:
+    """TPO/COMPANY/PANEL can view any student. A STUDENT may only view their own record."""
+    if current_user.role != UserRole.STUDENT:
+        return
+    result = await db.execute(select(Student).where(Student.id == student_id))
+    student = result.scalar_one_or_none()
+    if not student or student.email != current_user.email:
+        raise HTTPException(status_code=403, detail="You can only access your own student record")
+
 
 class UpdateStudentRequest(BaseModel):
     cgpa: Optional[float] = None
@@ -178,7 +209,7 @@ async def upload_my_resume(
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(content)
 
-    student.resume_url = f"/uploads/{filename}"
+    student.resume_url = f"/api/students/{student.id}/resume"
     student.resume_uploaded_at = datetime.utcnow()
     await db.commit()
     return {
@@ -186,6 +217,72 @@ async def upload_my_resume(
         "resume_uploaded_at": student.resume_uploaded_at.isoformat(),
         "filename": filename,
         "size_mb": round(size_mb, 2),
+    }
+
+
+@router.get("/me/skill-advice")
+async def get_my_skill_advice(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Real Gemini-generated skill-gap advice for the logged-in student,
+    driven by skill demand across currently posted drives."""
+    from collections import defaultdict
+    from app.agents.jd_analyst import generate_skill_gap_advice
+    from app.models import PlacementDrive
+
+    student_result = await db.execute(
+        select(Student).options(selectinload(Student.skills))
+        .where(Student.email == current_user.email)
+    )
+    student = student_result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No student record found for your account. Please contact the TPO.",
+        )
+
+    drives_result = await db.execute(
+        select(PlacementDrive).where(PlacementDrive.jd_parsed.isnot(None))
+    )
+    drives = drives_result.scalars().all()
+
+    demand: dict[str, int] = defaultdict(int)
+    for d in drives:
+        parsed = d.jd_parsed or {}
+        for skill in (parsed.get("required_skills") or []):
+            demand[skill] += 2
+        for skill in (parsed.get("preferred_skills") or []):
+            demand[skill] += 1
+
+    ranked = sorted(demand.items(), key=lambda x: -x[1])
+    top_required = [s for s, _ in ranked[:6]]
+    top_preferred = [s for s, _ in ranked[6:12]]
+
+    role = "Software Engineer"
+    if drives and drives[0].jd_parsed:
+        role = drives[0].jd_parsed.get("role", role)
+
+    student_skills = [sk.skill for sk in student.skills]
+
+    if not top_required and not top_preferred:
+        return {
+            "advice": "No active drives are posted yet, so there's no live skill demand "
+                      "to compare against. Keep your profile and skills up to date.",
+            "based_on_role": None,
+            "top_required_skills": [],
+        }
+
+    advice_text = await generate_skill_gap_advice(
+        student_skills=student_skills,
+        required_skills=top_required,
+        preferred_skills=top_preferred,
+        role=role,
+    )
+    return {
+        "advice": advice_text,
+        "based_on_role": role,
+        "top_required_skills": top_required,
     }
 
 
@@ -223,8 +320,9 @@ async def list_students(
 async def get_student(
     student_id: str,
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    await _assert_student_access(student_id, current_user, db)
     result = await db.execute(
         select(Student)
         .options(selectinload(Student.skills), selectinload(Student.interview_slots))
@@ -258,7 +356,7 @@ async def update_student(
     student_id: str,
     body: UpdateStudentRequest,
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(get_current_user),
+    _: object = Depends(require_role(UserRole.TPO)),
 ):
     result = await db.execute(select(Student).where(Student.id == student_id))
     student = result.scalar_one_or_none()
@@ -299,8 +397,9 @@ async def upload_resume(
     student_id: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    await _assert_student_access(student_id, current_user, db)
     result = await db.execute(select(Student).where(Student.id == student_id))
     student = result.scalar_one_or_none()
     if not student:
@@ -314,18 +413,47 @@ async def upload_resume(
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(await file.read())
 
-    student.resume_url = f"/uploads/{filename}"
+    student.resume_url = f"/api/students/{student_id}/resume"
     student.resume_uploaded_at = datetime.utcnow()
     await db.commit()
     return {"resume_url": student.resume_url, "resume_uploaded_at": student.resume_uploaded_at.isoformat()}
+
+
+@router.get("/{student_id}/resume")
+async def download_resume(
+    student_id: str,
+    token: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve a résumé through an authenticated endpoint. Replaces the old
+    `/uploads` static mount (see main.py), which had no auth at all and a
+    deterministic filename — anyone could download any student's résumé with
+    no login. Accepts the JWT as a query param since this URL is used in a
+    plain <a href> download link, which can't set an Authorization header."""
+    user = await _user_from_query_token(token, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Missing or invalid token")
+    await _assert_student_access(student_id, user, db)
+
+    result = await db.execute(select(Student).where(Student.id == student_id))
+    student = result.scalar_one_or_none()
+    if not student or not student.resume_url:
+        raise HTTPException(status_code=404, detail="No resume on file for this student")
+
+    matches = [f for f in os.listdir(settings.UPLOAD_DIR) if f.startswith(f"resume_{student_id}.")]
+    if not matches:
+        raise HTTPException(status_code=404, detail="Resume file not found on disk")
+    filepath = os.path.join(settings.UPLOAD_DIR, matches[0])
+    return FileResponse(filepath, filename=matches[0])
 
 
 @router.get("/{student_id}/schedule")
 async def get_student_schedule(
     student_id: str,
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    await _assert_student_access(student_id, current_user, db)
     result = await db.execute(
         select(InterviewSlot)
         .options(
@@ -357,8 +485,9 @@ async def get_student_schedule(
 async def get_student_matches(
     student_id: str,
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    await _assert_student_access(student_id, current_user, db)
     result = await db.execute(
         select(MatchScore)
         .options(selectinload(MatchScore.drive))

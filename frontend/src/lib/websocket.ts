@@ -15,7 +15,7 @@ export function useTPOWebSocket() {
     const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
     if (!token) return;
 
-    wsRef.current = new WebSocket(`${WS_URL}/ws/dashboard`);
+    wsRef.current = new WebSocket(`${WS_URL}/ws/dashboard?token=${encodeURIComponent(token)}`);
 
     wsRef.current.onopen = () => {
       console.log("[WS] TPO dashboard connected");
@@ -67,7 +67,9 @@ export function useStudentWebSocket(studentId: string | null) {
 
   const connect = useCallback(() => {
     if (!studentId) return;
-    wsRef.current = new WebSocket(`${WS_URL}/ws/student/${studentId}`);
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    if (!token) return;
+    wsRef.current = new WebSocket(`${WS_URL}/ws/student/${studentId}?token=${encodeURIComponent(token)}`);
 
     wsRef.current.onopen = () => {
       console.log(`[WS] Student ${studentId} connected`);

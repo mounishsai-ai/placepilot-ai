@@ -4,6 +4,7 @@ Analytics API — dashboard, skill-gap, readiness, and placement trend data.
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, case
+from sqlalchemy.orm import selectinload
 from collections import defaultdict
 
 from app.database import get_db
@@ -93,6 +94,80 @@ async def get_tpo_dashboard(
         "recent_agent_activity": recent_events,
         "students_by_branch": branch_totals,
     }
+
+
+@router.get("/exceptions")
+async def get_exceptions(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Borderline eligibility cases the AI flagged for human review.
+
+    `EligibilityResult.is_edge_case` is computed by the eligibility agent for
+    every near-boundary student (e.g. missed CGPA cutoff by <0.3, or exactly
+    one backlog over the limit) but was never read by any endpoint before this
+    one — required feature #7 ("pending actions and exceptions") had no data
+    source. This is that data source.
+    """
+    result = await db.execute(
+        select(EligibilityResult)
+        .options(
+            selectinload(EligibilityResult.student),
+            selectinload(EligibilityResult.drive).selectinload(PlacementDrive.company),
+        )
+        .where(EligibilityResult.is_edge_case == True)  # noqa: E712
+        .order_by(EligibilityResult.checked_at.desc())
+        .limit(100)
+    )
+    rows = result.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "drive_id": r.drive_id,
+            "drive_title": r.drive.title if r.drive else None,
+            "company": r.drive.company.name if r.drive and r.drive.company else None,
+            "student_id": r.student_id,
+            "student_name": r.student.name if r.student else None,
+            "roll_no": r.student.roll_no if r.student else None,
+            "eligible": r.eligible,
+            "reasons": r.reason,
+            "checked_at": r.checked_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@router.get("/audit-trail")
+async def get_audit_trail(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Cross-drive timeline of every agent decision AND every human decision,
+    distinguished by `AgentEvent.actor` ("ai" vs "tpo" vs "system"). This data
+    was already persisted for every pipeline run and every approval — this is
+    the first endpoint that surfaces it as one readable trail rather than a
+    per-drive scroll buried in an expandable card.
+    """
+    result = await db.execute(
+        select(AgentEvent)
+        .options(selectinload(AgentEvent.drive))
+        .order_by(AgentEvent.created_at.desc())
+        .limit(150)
+    )
+    events = result.scalars().all()
+    return [
+        {
+            "id": e.id,
+            "drive_id": e.drive_id,
+            "drive_title": e.drive.title if e.drive else None,
+            "event_type": e.event_type,
+            "agent_name": e.agent_name,
+            "actor": e.actor,
+            "payload": e.payload,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in events
+    ]
 
 
 @router.get("/skill-gap")

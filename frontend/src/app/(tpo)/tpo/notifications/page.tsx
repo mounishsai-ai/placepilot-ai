@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Bell, Send, RefreshCw, Clock, CheckCircle, AlertTriangle, Inbox } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
-import { notificationsAPI } from "@/lib/api";
+import { notificationsAPI, studentsAPI } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
 
@@ -45,7 +45,6 @@ export default function NotificationsPage() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [channel, setChannel] = useState("email");
-  const [target, setTarget] = useState("all");
 
   const fetchQueue = useCallback(async () => {
     try {
@@ -89,13 +88,19 @@ export default function NotificationsPage() {
     }
     setSending(true);
     try {
+      const studentsRes = await studentsAPI.list();
+      const studentIds = (studentsRes.data as { id: string }[]).map((s) => s.id);
+      if (studentIds.length === 0) {
+        toast.error("No students found to notify");
+        return;
+      }
       await notificationsAPI.send({
-        channel,
-        subject,
-        message,
-        recipient_type: target,
+        student_ids: studentIds,
+        template_id: "custom",
+        data: { subject, body: message },
+        channels: [channel],
       });
-      toast.success(`✉️ Notification queued for ${target}`);
+      toast.success(`✉️ Notification queued for ${studentIds.length} students`);
       setComposeOpen(false);
       setSubject("");
       setMessage("");
@@ -187,15 +192,9 @@ export default function NotificationsPage() {
                 </div>
                 <div>
                   <label className="text-white/40 text-xs mb-1.5 block">Recipients</label>
-                  <select
-                    value={target}
-                    onChange={(e) => setTarget(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
-                  >
-                    <option value="all">All Students</option>
-                    <option value="shortlisted">Shortlisted Only</option>
-                    <option value="eligible">Eligible Only</option>
-                  </select>
+                  <div className="w-full bg-white/[0.03] border border-white/10 text-white/60 text-sm rounded-xl px-3 py-2">
+                    All students
+                  </div>
                 </div>
               </div>
               <div className="mb-4">

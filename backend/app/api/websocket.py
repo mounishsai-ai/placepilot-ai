@@ -3,10 +3,36 @@ WebSocket hub — real-time updates for TPO dashboard and student notifications.
 """
 import json
 from typing import Optional
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from jose import JWTError, jwt
 from loguru import logger
 
+from app.database import get_db
+from app.models import User, UserRole, Student
+from app.config import settings
+
 router = APIRouter()
+
+_ALGORITHM = "HS256"
+
+
+async def _authenticate_ws(token: Optional[str], db: AsyncSession) -> Optional[User]:
+    """Decode the JWT passed as a WS query param — browsers can't set custom
+    headers on a WebSocket handshake, so this is the standard pattern."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[_ALGORITHM])
+        user_id = payload.get("sub")
+    except JWTError:
+        return None
+    if not user_id:
+        return None
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    return user if user and user.is_active else None
 
 
 class ConnectionManager:
@@ -49,8 +75,16 @@ manager = ConnectionManager()
 
 
 @router.websocket("/dashboard")
-async def tpo_dashboard_ws(websocket: WebSocket):
+async def tpo_dashboard_ws(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
     """WebSocket for TPO — receives all agent events and drive status updates."""
+    user = await _authenticate_ws(token, db)
+    if not user or user.role != UserRole.TPO:
+        await websocket.close(code=4401)
+        return
     await manager.connect(websocket, "tpo_dashboard")
     try:
         while True:
@@ -63,8 +97,28 @@ async def tpo_dashboard_ws(websocket: WebSocket):
 
 
 @router.websocket("/student/{student_id}")
-async def student_ws(websocket: WebSocket, student_id: str):
-    """WebSocket for a specific student — receives their notifications."""
+async def student_ws(
+    websocket: WebSocket,
+    student_id: str,
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """WebSocket for a specific student — receives their notifications.
+    Only that student (matched by email) or a TPO may connect to this room."""
+    user = await _authenticate_ws(token, db)
+    if not user:
+        await websocket.close(code=4401)
+        return
+    if user.role == UserRole.STUDENT:
+        result = await db.execute(select(Student).where(Student.id == student_id))
+        student = result.scalar_one_or_none()
+        if not student or student.email != user.email:
+            await websocket.close(code=4403)
+            return
+    elif user.role != UserRole.TPO:
+        await websocket.close(code=4403)
+        return
+
     room = f"student_{student_id}"
     await manager.connect(websocket, room)
     try:

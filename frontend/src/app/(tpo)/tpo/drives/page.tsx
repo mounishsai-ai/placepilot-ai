@@ -338,11 +338,13 @@ function DriveCard({
   drive,
   onRunPipeline,
   onReviewShortlist,
+  onConfirmSchedule,
   liveEvents,
 }: {
   drive: Drive;
   onRunPipeline: (id: string) => void;
   onReviewShortlist: (id: string) => void;
+  onConfirmSchedule: (id: string) => void;
   liveEvents: AgentEvent[];
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -439,6 +441,15 @@ function DriveCard({
             >
               <AlertTriangle size={13} className="text-amber-400" />
               <span className="text-amber-300">Review Shortlist</span>
+            </button>
+          )}
+          {drive.status === "schedule_pending" && (
+            <button
+              onClick={() => onConfirmSchedule(drive.id)}
+              className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 !bg-amber-500/20 !border-amber-500/40 hover:!bg-amber-500/30"
+            >
+              <Calendar size={13} className="text-amber-400" />
+              <span className="text-amber-300">Confirm Schedule</span>
             </button>
           )}
           <button
@@ -586,6 +597,17 @@ export default function DrivesPage() {
     }
   };
 
+  const handleConfirmSchedule = async (id: string) => {
+    try {
+      await drivesAPI.approveSchedule(id, { approved: true });
+      toast.success("✅ Schedule confirmed — students will be notified");
+      fetchDrives();
+    } catch (err: unknown) {
+      const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
+      toast.error(msg ?? "Failed to confirm schedule");
+    }
+  };
+
   const statsBar = {
     total: drives.length,
     active: drives.filter((d) => ["jd_analyzed", "matched", "eligibility_checked", "ongoing"].includes(d.status)).length,
@@ -642,6 +664,7 @@ export default function DrivesPage() {
                   drive={drive}
                   onRunPipeline={handleRunPipeline}
                   onReviewShortlist={handleReviewShortlist}
+                  onConfirmSchedule={handleConfirmSchedule}
                   liveEvents={agentEvents.filter((e) => e.drive_id === drive.id)}
                 />
               ))}

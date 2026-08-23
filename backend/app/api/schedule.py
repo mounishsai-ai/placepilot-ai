@@ -12,7 +12,8 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import (
     InterviewRound, InterviewSlot, Room, PanelMember,
-    PanelAvailability, PlacementDrive, RoundType, UserRole, AgentEvent
+    PanelAvailability, PlacementDrive, RoundType, UserRole, AgentEvent,
+    DriveStatus, MatchScore, User,
 )
 from app.api.auth import get_current_user, require_role
 from app.api.websocket import emit_agent_event
@@ -78,7 +79,6 @@ async def auto_schedule_round(
         raise HTTPException(status_code=404, detail="Round not found")
 
     # Get shortlisted students for this drive
-    from app.models import MatchScore
     matches_result = await db.execute(
         select(MatchScore.student_id)
         .where(MatchScore.drive_id == round_.drive_id, MatchScore.shortlisted == True)
@@ -121,6 +121,10 @@ async def auto_schedule_round(
         drive_id=round_.drive_id, event_type="schedule_created",
         agent_name="scheduler_agent", payload=payload,
     ))
+    # HITL gate #2: a real schedule now exists — flag it for TPO confirmation
+    # instead of leaving it silently unreviewed (previously nothing set this).
+    if round_.drive and allocated:
+        round_.drive.status = DriveStatus.SCHEDULE_PENDING
     await db.commit()
     await emit_agent_event(
         "schedule_created", payload,
@@ -131,6 +135,143 @@ async def auto_schedule_round(
         "conflicts": conflicts,
         "round_id": round_id,
     }
+
+
+@router.get("/drives/{drive_id}/rounds")
+async def list_rounds_for_drive(
+    drive_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
+):
+    """List interview rounds for a drive — was missing entirely; the TPO schedule
+    page had no way to discover rounds that already existed for a drive."""
+    result = await db.execute(
+        select(InterviewRound)
+        .where(InterviewRound.drive_id == drive_id)
+        .order_by(InterviewRound.round_no)
+    )
+    rounds = result.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "round_no": r.round_no,
+            "round_type": r.round_type.value,
+            "start_datetime": r.start_datetime.isoformat() if r.start_datetime else None,
+            "end_datetime": r.end_datetime.isoformat() if r.end_datetime else None,
+            "mode": r.mode,
+            "venue": r.venue,
+        }
+        for r in rounds
+    ]
+
+
+@router.get("/slots")
+async def list_all_slots(
+    drive_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
+):
+    """Flat overview of interview slots across drives — backs the TPO schedule
+    page, which previously had no real data source at all (DEMO_SLOTS)."""
+    query = (
+        select(InterviewSlot)
+        .options(
+            selectinload(InterviewSlot.student),
+            selectinload(InterviewSlot.panel_member),
+            selectinload(InterviewSlot.room),
+            selectinload(InterviewSlot.round),
+        )
+        .order_by(InterviewSlot.slot_start.desc())
+        .limit(200)
+    )
+    if drive_id:
+        query = query.join(InterviewRound).where(InterviewRound.drive_id == drive_id)
+    result = await db.execute(query)
+    slots = result.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "student_name": s.student.name if s.student else None,
+            "student_roll": s.student.roll_no if s.student else None,
+            "round_type": s.round.round_type.value if s.round else None,
+            "slot_start": s.slot_start.isoformat(),
+            "slot_end": s.slot_end.isoformat(),
+            "status": s.status.value,
+            "result": s.result,
+            "panel": s.panel_member.name if s.panel_member else None,
+            "venue": s.room.name if s.room else (s.round.venue if s.round else None),
+        }
+        for s in slots
+    ]
+
+
+@router.get("/slots/mine")
+async def get_my_slots(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.PANEL)),
+):
+    """A panel member's own assigned slots. Previously the panel page had no
+    per-panel query at all and always fell back to fabricated demo data."""
+    panel_result = await db.execute(
+        select(PanelMember).where(PanelMember.user_id == current_user.id)
+    )
+    panel = panel_result.scalar_one_or_none()
+    if not panel:
+        raise HTTPException(
+            status_code=404,
+            detail="No panel member record linked to your account. Contact the TPO.",
+        )
+
+    result = await db.execute(
+        select(InterviewSlot)
+        .options(
+            selectinload(InterviewSlot.student),
+            selectinload(InterviewSlot.room),
+            selectinload(InterviewSlot.round),
+        )
+        .where(InterviewSlot.panel_id == panel.id)
+        .order_by(InterviewSlot.slot_start)
+    )
+    slots = result.scalars().all()
+
+    # Enrich with each student's match score for the relevant drive (0-2 extra
+    # queries total, not per-slot).
+    pairs = {(s.round.drive_id, s.student_id) for s in slots if s.round}
+    match_map: dict[tuple[str, str], float] = {}
+    if pairs:
+        drive_ids = list({p[0] for p in pairs})
+        student_ids = list({p[1] for p in pairs})
+        ms_result = await db.execute(
+            select(MatchScore).where(
+                MatchScore.drive_id.in_(drive_ids),
+                MatchScore.student_id.in_(student_ids),
+            )
+        )
+        for ms in ms_result.scalars().all():
+            match_map[(ms.drive_id, ms.student_id)] = ms.score
+
+    output = []
+    for s in slots:
+        score = None
+        if s.round:
+            raw = match_map.get((s.round.drive_id, s.student_id))
+            if raw is not None:
+                score = round(raw * 100, 1) if raw <= 1 else round(raw, 1)
+        output.append({
+            "id": s.id,
+            "student_name": s.student.name if s.student else None,
+            "student_roll": s.student.roll_no if s.student else None,
+            "branch": s.student.branch if s.student else None,
+            "cgpa": s.student.cgpa if s.student else None,
+            "match_score": score,
+            "slot_start": s.slot_start.isoformat(),
+            "slot_end": s.slot_end.isoformat(),
+            "room": s.room.name if s.room else None,
+            "round_type": s.round.round_type.value if s.round else None,
+            "status": s.status.value,
+            "result": s.result,
+        })
+    return output
 
 
 @router.get("/rounds/{round_id}/slots")
@@ -171,12 +312,21 @@ async def update_slot_result(
     slot_id: str,
     body: SlotResultRequest,
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(require_role(UserRole.PANEL, UserRole.TPO)),
+    current_user: User = Depends(require_role(UserRole.PANEL, UserRole.TPO)),
 ):
     result = await db.execute(select(InterviewSlot).where(InterviewSlot.id == slot_id))
     slot = result.scalar_one_or_none()
     if not slot:
         raise HTTPException(status_code=404, detail="Slot not found")
+
+    if current_user.role == UserRole.PANEL:
+        panel_result = await db.execute(
+            select(PanelMember).where(PanelMember.user_id == current_user.id)
+        )
+        panel = panel_result.scalar_one_or_none()
+        if not panel or slot.panel_id != panel.id:
+            raise HTTPException(status_code=403, detail="You can only record results for your own interview slots")
+
     slot.result = body.result
     slot.feedback = body.feedback
     slot.status = "completed"

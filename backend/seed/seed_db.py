@@ -8,10 +8,12 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from datetime import datetime, timedelta
 from app.database import AsyncSessionLocal, init_db
 from app.models import (
     Company, Student, StudentSkill, PlacementDrive, EligibilityRule,
-    User, UserRole, Room, PanelMember
+    User, UserRole, Room, PanelMember, DriveStatus, InterviewRound,
+    InterviewSlot, RoundType, SlotStatus
 )
 from app.api.auth import hash_password
 from loguru import logger
@@ -37,6 +39,7 @@ async def seed():
         ]
         for u in default_users:
             db.add(u)
+        await db.flush()  # users must exist before companies FK-reference user_company_01
         logger.info("Added default users")
 
         # ── Demo student record (linked to student@college.edu login) ─────────
@@ -80,6 +83,7 @@ async def seed():
             if c["id"] == "company_001":  # TCS Digital — linked to hr@tcs.com demo login
                 company.user_id = "user_company_01"
             db.add(company)
+        await db.flush()  # companies must exist before panel_members FK-reference them
 
         # ── Panel members ────────────────────────────────────────────────────
         for i in range(20):
@@ -91,6 +95,8 @@ async def seed():
                 designation="Senior Engineer",
                 expertise=["Technical Interview", "System Design"],
             )
+            if i == 0:  # panel_001 — linked to panel@company.com demo login
+                pm.user_id = "user_panel_01"
             db.add(pm)
 
         # ── Rooms ────────────────────────────────────────────────────────────
@@ -147,6 +153,7 @@ async def seed():
         logger.info(f"Added {len(data['students'])} students")
 
         # ── Drives ───────────────────────────────────────────────────────────
+        drive_objs = []
         for d in data["drives"]:
             drive = PlacementDrive(
                 id=d["id"],
@@ -158,6 +165,7 @@ async def seed():
                 package_lpa=d["package_lpa"],
             )
             db.add(drive)
+            drive_objs.append(drive)
 
             # Add eligibility rules
             parsed = d.get("jd_parsed", {})
@@ -178,6 +186,47 @@ async def seed():
                 ))
 
         logger.info(f"Added {len(data['drives'])} drives with eligibility rules")
+
+        # ── Demo interview history (so a fresh DB doesn't open on all-zero KPIs) ──
+        # One COMPLETED drive with a real interview round + slots + results,
+        # plus a couple of drives in other pipeline states for variety.
+        if drive_objs:
+            completed = drive_objs[0]
+            completed.status = DriveStatus.COMPLETED
+
+            demo_round = InterviewRound(
+                id="round_demo_completed",
+                drive_id=completed.id,
+                round_no=1,
+                round_type=RoundType.TECHNICAL,
+                start_datetime=datetime(2026, 8, 20, 9, 0),
+                end_datetime=datetime(2026, 8, 20, 13, 0),
+                mode="offline",
+                venue="Interview Room 1",
+                slot_duration_min=30,
+            )
+            db.add(demo_round)
+
+            interviewees = data["students"][:8]
+            for i, s in enumerate(interviewees):
+                slot_start = demo_round.start_datetime + timedelta(minutes=30 * i)
+                db.add(InterviewSlot(
+                    id=f"slot_demo_{i+1:02d}",
+                    round_id=demo_round.id,
+                    student_id=s["roll_no"],
+                    panel_id=f"panel_{(i % 20) + 1:03d}",
+                    room_id=f"room_{(i % 10) + 1:03d}",
+                    slot_start=slot_start,
+                    slot_end=slot_start + timedelta(minutes=30),
+                    status=SlotStatus.COMPLETED,
+                    result="selected" if i < 5 else "rejected",
+                ))
+            logger.info(f"Added 1 completed drive with {len(interviewees)} interview outcomes")
+
+        if len(drive_objs) > 1:
+            drive_objs[1].status = DriveStatus.SCHEDULED
+        if len(drive_objs) > 2:
+            drive_objs[2].status = DriveStatus.ONGOING
 
         await db.commit()
         logger.success("✅ Database seeded successfully!")

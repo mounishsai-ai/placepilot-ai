@@ -4,6 +4,7 @@ Supports: email (SendGrid), SMS (Twilio), WhatsApp (Twilio), in-app.
 Offline fallback: queues messages to DB when external services fail.
 """
 import asyncio
+from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 from loguru import logger
@@ -107,10 +108,14 @@ Placement Cell
 
 
 def _render_template(template_id: str, data: dict) -> tuple[str, str]:
-    """Render subject + body from a template."""
+    """Render subject + body from a template. Missing placeholders degrade to '-'
+    instead of raising, since a TPO's ad-hoc `data` dict rarely fills every field."""
+    if template_id == "custom":
+        return data.get("subject", "Placement Update"), data.get("body", "")
     tmpl = TEMPLATES.get(template_id, {})
-    subject = tmpl.get("subject", "Placement Update").format(**data)
-    body = tmpl.get("body", "").format(**data)
+    safe_data = defaultdict(lambda: "-", data)
+    subject = tmpl.get("subject", "Placement Update").format_map(safe_data)
+    body = tmpl.get("body", "").format_map(safe_data)
     return subject, body
 
 
