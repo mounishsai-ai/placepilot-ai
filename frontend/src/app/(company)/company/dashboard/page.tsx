@@ -46,6 +46,7 @@ export default function CompanyDashboard() {
   const [parsedJD, setParsedJD] = useState<Record<string, unknown> | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [pipelineStats, setPipelineStats] = useState<{ total?: number; eligible?: number; ranked?: number }>({});
   const [driveId, setDriveId] = useState<string | null>(null);
   const [driveTitle, setDriveTitle] = useState("New Drive");
   const [isDragging, setIsDragging] = useState(false);
@@ -80,37 +81,31 @@ export default function CompanyDashboard() {
       const id = createRes.data.id;
       setDriveId(id);
 
-      toast.loading("🧠 Gemini analyzing JD...", { id: "jd-analyze" });
-
-      // Poll for JD parsed result (it runs as part of pipeline start)
+      toast.loading("🧠 Gemini is analyzing the JD, checking eligibility, and ranking candidates…", { id: "jd-analyze" });
       await drivesAPI.runPipeline(id);
-      toast.loading("⏳ Extracting fields...", { id: "jd-analyze" });
 
-      // Wait a bit then fetch parsed data
-      await new Promise(r => setTimeout(r, 5000));
-      const driveRes = await drivesAPI.get(id);
-      if (driveRes.data.jd_parsed) {
-        setParsedJD(driveRes.data.jd_parsed as Record<string, unknown>);
-        toast.success("✅ JD analyzed successfully!", { id: "jd-analyze" });
-        setStep("preview");
-      } else {
-        // Show a demo parsed result if pipeline hasn't finished yet
-        setParsedJD({
-          role: "Software Development Engineer",
-          package_lpa: 12,
-          min_cgpa: 7.0,
-          max_backlogs: 0,
-          work_mode: "hybrid",
-          bond_years: 2,
-          location: "Pan India",
-          allowed_branches: ["CSE", "IT", "ECE"],
-          required_skills: ["Python", "Java", "Data Structures", "SQL", "OOP"],
-          preferred_skills: ["React", "Docker", "REST APIs", "Cloud"],
-          selection_process: ["Online Assessment", "Technical Interview 1", "Technical Interview 2", "HR Interview"],
-          job_description_summary: "TCS Digital is seeking SDE freshers for their digital transformation team.",
-        });
-        toast.success("✅ JD analyzed!", { id: "jd-analyze" });
-        setStep("preview");
+      // The full pipeline (JD parse -> eligibility -> matching) runs as one job
+      // and only writes jd_parsed once it reaches shortlist_pending — poll for
+      // real completion instead of guessing a fixed wait.
+      const POLL_MS = 2000;
+      const MAX_POLLS = 45; // ~90s — measured real runs (201 students, top-5 explanations) landing 25-65s
+      let completed = false;
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, POLL_MS));
+        const driveRes = await drivesAPI.get(id);
+        if (driveRes.data.jd_parsed) {
+          setParsedJD(driveRes.data.jd_parsed as Record<string, unknown>);
+          toast.success("✅ JD analyzed, eligibility checked, candidates ranked!", { id: "jd-analyze" });
+          setStep("preview");
+          completed = true;
+          break;
+        }
+      }
+      if (!completed) {
+        toast.error(
+          "Still working after 60s — the pipeline is taking longer than usual. Check the TPO Drives page for live progress.",
+          { id: "jd-analyze" }
+        );
       }
     } catch (err: unknown) {
       const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
@@ -123,8 +118,22 @@ export default function CompanyDashboard() {
   const handleConfirmAndPipeline = async () => {
     setPipelineRunning(true);
     setStep("pipeline");
-    toast.success("🚀 Full AI pipeline launched! TPO will receive candidates shortly.");
-    await new Promise(r => setTimeout(r, 2000));
+    // Eligibility + matching already ran during handleAnalyze (it's one pipeline
+    // job) — pull the real numbers it already computed instead of simulating.
+    try {
+      const eventsRes = await drivesAPI.getEvents(driveId!);
+      const events = eventsRes.data as { event_type: string; payload?: Record<string, unknown> }[];
+      const eligEvt = events.find((e) => e.event_type === "eligibility_checked");
+      const matchEvt = events.find((e) => e.event_type === "matching_complete");
+      setPipelineStats({
+        total: eligEvt?.payload?.total as number | undefined,
+        eligible: eligEvt?.payload?.eligible as number | undefined,
+        ranked: matchEvt?.payload?.candidates_ranked as number | undefined,
+      });
+    } catch {
+      // non-fatal — the "done" step doesn't depend on these numbers
+    }
+    await new Promise((r) => setTimeout(r, 800));
     setPipelineRunning(false);
     setStep("done");
   };
@@ -319,11 +328,11 @@ export default function CompanyDashboard() {
                 {/* Key fields */}
                 <div className="grid grid-cols-3 gap-4 mb-6">
                   {[
-                    { label: "Role",         value: parsedJD.role,        icon: Building2,  color: "text-blue-400" },
+                    { label: "Role",         value: String(parsedJD.role ?? "—"),        icon: Building2,  color: "text-blue-400" },
                     { label: "Package",      value: parsedJD.package_lpa ? `₹${parsedJD.package_lpa} LPA` : "—", icon: Package, color: "text-emerald-400" },
-                    { label: "Min CGPA",     value: parsedJD.min_cgpa,    icon: Star,       color: "text-amber-400" },
-                    { label: "Max Backlogs", value: parsedJD.max_backlogs ?? 0, icon: Target, color: "text-white/60" },
-                    { label: "Work Mode",    value: parsedJD.work_mode,   icon: Building2,  color: "text-purple-400" },
+                    { label: "Min CGPA",     value: String(parsedJD.min_cgpa ?? "—"),    icon: Star,       color: "text-amber-400" },
+                    { label: "Max Backlogs", value: String(parsedJD.max_backlogs ?? 0),  icon: Target, color: "text-white/60" },
+                    { label: "Work Mode",    value: String(parsedJD.work_mode ?? "—"),   icon: Building2,  color: "text-purple-400" },
                     { label: "Bond",         value: parsedJD.bond_years ? `${parsedJD.bond_years} years` : "None", icon: CheckCircle, color: "text-white/60" },
                   ].map((f) => (
                     <div key={f.label} className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
@@ -382,7 +391,7 @@ export default function CompanyDashboard() {
                 )}
 
                 {/* Summary */}
-                {parsedJD.job_description_summary && (
+                {Boolean(parsedJD.job_description_summary) && (
                   <div className="bg-blue-500/[0.06] border border-blue-500/15 rounded-xl px-4 py-3 mb-6">
                     <p className="text-blue-200/70 text-sm italic">
                       &ldquo;{parsedJD.job_description_summary as string}&rdquo;
@@ -416,22 +425,26 @@ export default function CompanyDashboard() {
               <div className="w-20 h-20 rounded-2xl bg-blue-500/20 flex items-center justify-center mx-auto mb-6">
                 <Loader2 size={36} className="text-blue-400 animate-spin" />
               </div>
-              <h2 className="text-white font-bold text-xl mb-2">AI Pipeline Running</h2>
+              <h2 className="text-white font-bold text-xl mb-2">AI Pipeline Complete</h2>
               <p className="text-white/50 text-sm max-w-sm mx-auto">
-                Gemini is analyzing the JD, checking eligibility for 201 students,
-                and ranking candidates by vector similarity…
+                Gemini already analyzed the JD, checked eligibility, and ranked candidates
+                by vector similarity during analysis — here's what it found.
               </p>
               <div className="mt-8 space-y-2 max-w-xs mx-auto text-left">
                 {[
                   "✅ JD analyzed — role & requirements extracted",
-                  "✅ Eligibility check — 37 students qualified",
-                  "⏳ Vector matching — ranking by AI fit score…",
+                  pipelineStats.eligible !== undefined
+                    ? `✅ Eligibility check — ${pipelineStats.eligible}/${pipelineStats.total ?? "?"} students qualified`
+                    : "✅ Eligibility check complete",
+                  pipelineStats.ranked !== undefined
+                    ? `✅ Vector matching — ${pipelineStats.ranked} candidates ranked by AI fit score`
+                    : "✅ Vector matching complete",
                 ].map((msg, i) => (
                   <motion.div
                     key={i}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.5 }}
+                    transition={{ delay: i * 0.15 }}
                     className="text-white/50 text-xs"
                   >
                     {msg}

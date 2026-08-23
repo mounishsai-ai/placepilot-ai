@@ -190,7 +190,7 @@ export default function AnalyticsPage() {
                     stroke="#4d88ff"
                     strokeWidth={2.5}
                     dot={{ fill: "#4d88ff", strokeWidth: 0, r: 4 }}
-                    activeDot={{ r: 6, fill: "#4d88ff", boxShadow: "0 0 12px #4d88ff" }}
+                    activeDot={{ r: 6, fill: "#4d88ff" }}
                     name="Students Placed"
                   />
                 </LineChart>

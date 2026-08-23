@@ -1,50 +1,69 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Calendar, Clock, Users, CheckCircle, AlertTriangle, Plus } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import toast from "react-hot-toast";
+import { format } from "date-fns";
 import { scheduleAPI, drivesAPI } from "@/lib/api";
 
-// Demo data for schedule overview when no real slots exist
-const DEMO_SLOTS = [
-  {
-    id: "slot_001", time: "09:00 AM", date: "25 Aug 2026",
-    student: "Arjun Sharma", roll: "2024CS0001", round: "Technical",
-    panel: "Interviewer 3", venue: "Interview Room 2", status: "scheduled",
-  },
-  {
-    id: "slot_002", time: "09:30 AM", date: "25 Aug 2026",
-    student: "Priya Rajan", roll: "2024CS0022", round: "Technical",
-    panel: "Interviewer 3", venue: "Interview Room 2", status: "scheduled",
-  },
-  {
-    id: "slot_003", time: "10:00 AM", date: "25 Aug 2026",
-    student: "Vikram Nair", roll: "2024EC0112", round: "Technical",
-    panel: "Interviewer 7", venue: "Interview Room 4", status: "scheduled",
-  },
-  {
-    id: "slot_004", time: "10:30 AM", date: "25 Aug 2026",
-    student: "Anita Kumar", roll: "2024IT0184", round: "HR",
-    panel: "HR Manager 1", venue: "Google Meet", status: "completed",
-    result: "selected",
-  },
-  {
-    id: "slot_005", time: "11:00 AM", date: "25 Aug 2026",
-    student: "Rahul Das", roll: "2024CS0150", round: "Technical",
-    panel: "Interviewer 5", venue: "Interview Room 3", status: "completed",
-    result: "rejected",
-  },
-];
+interface Slot {
+  id: string;
+  student_name: string | null;
+  student_roll: string | null;
+  round_type: string | null;
+  slot_start: string;
+  slot_end: string;
+  status: string;
+  result: string | null;
+  panel: string | null;
+  venue: string | null;
+}
+
+interface Drive {
+  id: string;
+  title: string;
+  company: string | null;
+}
+
+function toLocalInputValue(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function SchedulePage() {
-  const [slots] = useState(DEMO_SLOTS);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(true);
+  const [drives, setDrives] = useState<Drive[]>([]);
   const [showCreateRound, setShowCreateRound] = useState(false);
-  const [driveId, setDriveId] = useState("drive_001");
+  const [driveId, setDriveId] = useState("");
   const [roundType, setRoundType] = useState("technical");
   const [slotDuration, setSlotDuration] = useState("30");
+  const now = new Date();
+  const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const [startDatetime, setStartDatetime] = useState(toLocalInputValue(now));
+  const [endDatetime, setEndDatetime] = useState(toLocalInputValue(inTwoHours));
   const [creating, setCreating] = useState(false);
+
+  const fetchSlots = useCallback(async () => {
+    try {
+      const res = await scheduleAPI.listSlots();
+      setSlots(res.data);
+    } catch {
+      toast.error("Failed to load interview slots");
+    } finally {
+      setLoadingSlots(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSlots();
+    drivesAPI.list().then((res) => {
+      setDrives(res.data);
+      if (res.data.length > 0) setDriveId(res.data[0].id);
+    }).catch(() => {});
+  }, [fetchSlots]);
 
   const stats = {
     total: slots.length,
@@ -54,6 +73,10 @@ export default function SchedulePage() {
   };
 
   const handleCreateRound = async () => {
+    if (!driveId) {
+      toast.error("Select a drive first");
+      return;
+    }
     setCreating(true);
     try {
       const res = await scheduleAPI.createRound({
@@ -62,11 +85,23 @@ export default function SchedulePage() {
         round_type: roundType,
         slot_duration_min: parseInt(slotDuration),
         mode: "offline",
+        start_datetime: startDatetime,
+        end_datetime: endDatetime,
       });
       toast.success("Round created! Running auto-schedule...");
-      await scheduleAPI.autoSchedule(res.data.id);
-      toast.success("✅ Interview slots auto-allocated via FCFS!");
+      const scheduleRes = await scheduleAPI.autoSchedule(res.data.id);
+      const { scheduled, conflicts } = scheduleRes.data;
+      if (scheduled > 0) {
+        toast.success(`✅ ${scheduled} interview slots auto-allocated via FCFS!`);
+      } else {
+        toast.error(
+          conflicts?.length > 0
+            ? `No slots allocated — ${conflicts.length} conflicts. Check the shortlist and time window.`
+            : "No slots allocated — does this drive have an approved shortlist yet?"
+        );
+      }
       setShowCreateRound(false);
+      fetchSlots();
     } catch (err: unknown) {
       const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
       toast.error(msg ?? "Failed to create schedule");
@@ -128,12 +163,17 @@ export default function SchedulePage() {
               </h3>
               <div className="grid grid-cols-3 gap-4 mb-4">
                 <div>
-                  <label className="text-white/40 text-xs mb-1.5 block">Drive ID</label>
-                  <input
+                  <label className="text-white/40 text-xs mb-1.5 block">Drive</label>
+                  <select
                     value={driveId}
                     onChange={(e) => setDriveId(e.target.value)}
                     className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
-                  />
+                  >
+                    {drives.length === 0 && <option value="">No drives found</option>}
+                    {drives.map((d) => (
+                      <option key={d.id} value={d.id}>{d.title} — {d.company ?? "Unknown"}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="text-white/40 text-xs mb-1.5 block">Round Type</label>
@@ -155,6 +195,24 @@ export default function SchedulePage() {
                     value={slotDuration}
                     onChange={(e) => setSlotDuration(e.target.value)}
                     min="15" max="120" step="15"
+                    className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-white/40 text-xs mb-1.5 block">Window Start</label>
+                  <input
+                    type="datetime-local"
+                    value={startDatetime}
+                    onChange={(e) => setStartDatetime(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-white/40 text-xs mb-1.5 block">Window End</label>
+                  <input
+                    type="datetime-local"
+                    value={endDatetime}
+                    onChange={(e) => setEndDatetime(e.target.value)}
                     className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
                   />
                 </div>
@@ -180,54 +238,62 @@ export default function SchedulePage() {
           {/* Schedule table */}
           <div className="glass-card overflow-hidden p-0">
             <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
-              <h3 className="text-white font-semibold">TCS Digital Drive — Interview Slots</h3>
-              <span className="text-white/30 text-sm">25 Aug 2026</span>
+              <h3 className="text-white font-semibold">Interview Slots — All Drives</h3>
+              <span className="text-white/30 text-sm">Most recent 200</span>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/[0.06]">
-                  {["Time", "Student", "Roll No", "Round", "Panel", "Venue", "Status"].map((h) => (
-                    <th key={h} className="text-left text-white/35 font-medium text-xs uppercase tracking-wider px-5 py-3">
-                      {h}
-                    </th>
+            {loadingSlots ? (
+              <div className="p-12 text-center text-white/30 text-sm">Loading slots…</div>
+            ) : slots.length === 0 ? (
+              <div className="p-12 text-center text-white/30 text-sm">
+                No interview slots yet. Create a round above to auto-schedule shortlisted candidates.
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/[0.06]">
+                    {["Time", "Student", "Roll No", "Round", "Panel", "Venue", "Status"].map((h) => (
+                      <th key={h} className="text-left text-white/35 font-medium text-xs uppercase tracking-wider px-5 py-3">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {slots.map((slot, i) => (
+                    <motion.tr
+                      key={slot.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: Math.min(i, 20) * 0.03 }}
+                      className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+                    >
+                      <td className="px-5 py-3">
+                        <div className="text-white font-medium">{format(new Date(slot.slot_start), "hh:mm a")}</div>
+                        <div className="text-white/30 text-[11px]">{format(new Date(slot.slot_start), "d MMM yyyy")}</div>
+                      </td>
+                      <td className="px-5 py-3 text-white">{slot.student_name ?? "—"}</td>
+                      <td className="px-5 py-3 text-white/50 font-mono text-xs">{slot.student_roll ?? "—"}</td>
+                      <td className="px-5 py-3">
+                        <span className="badge badge-blue text-[10px] capitalize">{slot.round_type ?? "—"}</span>
+                      </td>
+                      <td className="px-5 py-3 text-white/50 text-xs">{slot.panel ?? "—"}</td>
+                      <td className="px-5 py-3 text-white/50 text-xs">{slot.venue ?? "—"}</td>
+                      <td className="px-5 py-3">
+                        {slot.status === "completed" ? (
+                          <span className={`badge text-[10px] ${
+                            slot.result === "selected" ? "badge-green" : "badge-rose"
+                          }`}>
+                            {slot.result === "selected" ? "✓ Selected" : "✗ Rejected"}
+                          </span>
+                        ) : (
+                          <span className="badge badge-amber text-[10px]">Scheduled</span>
+                        )}
+                      </td>
+                    </motion.tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {slots.map((slot, i) => (
-                  <motion.tr
-                    key={slot.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
-                  >
-                    <td className="px-5 py-3">
-                      <div className="text-white font-medium">{slot.time}</div>
-                      <div className="text-white/30 text-[11px]">{slot.date}</div>
-                    </td>
-                    <td className="px-5 py-3 text-white">{slot.student}</td>
-                    <td className="px-5 py-3 text-white/50 font-mono text-xs">{slot.roll}</td>
-                    <td className="px-5 py-3">
-                      <span className="badge badge-blue text-[10px]">{slot.round}</span>
-                    </td>
-                    <td className="px-5 py-3 text-white/50 text-xs">{slot.panel}</td>
-                    <td className="px-5 py-3 text-white/50 text-xs">{slot.venue}</td>
-                    <td className="px-5 py-3">
-                      {slot.status === "completed" ? (
-                        <span className={`badge text-[10px] ${
-                          slot.result === "selected" ? "badge-green" : "badge-rose"
-                        }`}>
-                          {slot.result === "selected" ? "✓ Selected" : "✗ Rejected"}
-                        </span>
-                      ) : (
-                        <span className="badge badge-amber text-[10px]">Scheduled</span>
-                      )}
-                    </td>
-                  </motion.tr>
-                ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            )}
           </div>
         </main>
       </div>

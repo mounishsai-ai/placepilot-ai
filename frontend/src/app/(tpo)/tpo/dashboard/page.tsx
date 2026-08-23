@@ -4,7 +4,9 @@ import { motion } from "framer-motion";
 import {
   Briefcase, Users, Award, TrendingUp,
   Play, CheckCircle, AlertTriangle, Zap,
+  ShieldAlert, History, Bot, UserCheck,
 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import MetricCard from "@/components/ui/MetricCard";
@@ -55,6 +57,9 @@ export default function TPODashboard() {
   const [drives, setDrives] = useState<Record<string, unknown>[]>([]);
   const [pendingDrives, setPendingDrives] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exceptions, setExceptions] = useState<Record<string, unknown>[]>([]);
+  const [auditTrail, setAuditTrail] = useState<Record<string, unknown>[]>([]);
+  const [exceptionsLoading, setExceptionsLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
@@ -73,6 +78,19 @@ export default function TPODashboard() {
       toast.error("Failed to load dashboard data");
     } finally {
       setLoading(false);
+    }
+
+    try {
+      const [excRes, auditRes] = await Promise.all([
+        analyticsAPI.exceptions(),
+        analyticsAPI.auditTrail(),
+      ]);
+      setExceptions(excRes.data);
+      setAuditTrail(auditRes.data);
+    } catch {
+      // non-fatal — these are supplementary panels, don't block the main dashboard
+    } finally {
+      setExceptionsLoading(false);
     }
   }, []);
 
@@ -284,6 +302,103 @@ export default function TPODashboard() {
                   </motion.a>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* ── Exceptions + Audit Trail ─────────────────────────────────── */}
+          <div className="grid grid-cols-5 gap-6">
+            {/* Exceptions — borderline students the AI flagged for human review */}
+            <div className="col-span-3 glass-card">
+              <div className="flex items-center gap-2 mb-5">
+                <ShieldAlert size={16} className="text-amber-400" />
+                <h2 className="text-white font-semibold text-base">Exceptions — Needs Your Review</h2>
+                <span className="ml-auto badge-amber badge text-[10px]">
+                  {exceptionsLoading ? "…" : exceptions.length}
+                </span>
+              </div>
+              <p className="text-white/35 text-xs mb-4">
+                Students who just barely missed eligibility — a few tenths of CGPA,
+                or one backlog over the limit. Not auto-rejected; flagged for you.
+              </p>
+              {exceptionsLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => <div key={i} className="h-14 rounded-xl bg-white/[0.04] animate-pulse" />)}
+                </div>
+              ) : exceptions.length === 0 ? (
+                <div className="text-center text-white/30 text-sm py-10">
+                  No borderline cases right now.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                  {exceptions.map((exc) => {
+                    const reasons = (exc.reasons as { rule: string; passed: boolean; reason: string }[]) ?? [];
+                    const failedReasons = reasons.filter((r) => !r.passed);
+                    return (
+                      <div key={exc.id as string} className="rounded-xl border border-amber-500/15 bg-amber-500/[0.03] p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-white font-medium text-sm">{exc.student_name as string}</span>
+                          <span className={`badge text-[10px] ${exc.eligible ? "badge-green" : "badge-rose"}`}>
+                            {exc.eligible ? "Eligible" : "Not eligible"}
+                          </span>
+                        </div>
+                        <div className="text-white/35 text-[11px] mb-1.5">
+                          {exc.roll_no as string} · {exc.company as string ?? exc.drive_title as string}
+                        </div>
+                        {failedReasons.map((r, i) => (
+                          <div key={i} className="text-rose-300/70 text-[11px]">{r.reason}</div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Audit Trail — every decision, AI or human, in one timeline */}
+            <div className="col-span-2 glass-card">
+              <div className="flex items-center gap-2 mb-5">
+                <History size={16} className="text-purple-400" />
+                <h2 className="text-white font-semibold text-base">Audit Trail</h2>
+              </div>
+              <p className="text-white/35 text-xs mb-4">
+                Every AI decision and every human override, in order.
+              </p>
+              {exceptionsLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => <div key={i} className="h-10 rounded-xl bg-white/[0.04] animate-pulse" />)}
+                </div>
+              ) : auditTrail.length === 0 ? (
+                <div className="text-center text-white/30 text-sm py-10">
+                  No activity yet.
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-[340px] overflow-y-auto pr-1">
+                  {auditTrail.map((evt) => {
+                    const isHuman = evt.actor === "tpo";
+                    return (
+                      <div key={evt.id as string} className="flex items-start gap-2 py-1.5">
+                        {isHuman
+                          ? <UserCheck size={13} className="text-rose-400 mt-0.5 flex-shrink-0" />
+                          : <Bot size={13} className="text-blue-400 mt-0.5 flex-shrink-0" />}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[10px] font-semibold ${isHuman ? "text-rose-300" : "text-blue-300"}`}>
+                              {isHuman ? "TPO" : "AI"}
+                            </span>
+                            <span className="text-white/60 text-xs truncate">
+                              {(evt.event_type as string).replace(/_/g, " ")}
+                            </span>
+                          </div>
+                          <div className="text-white/25 text-[10px] truncate">
+                            {evt.drive_title as string ?? "—"} ·{" "}
+                            {formatDistanceToNow(new Date(evt.created_at as string), { addSuffix: true })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </main>

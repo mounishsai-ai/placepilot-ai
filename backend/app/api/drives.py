@@ -308,8 +308,17 @@ async def list_drives(
 async def get_shortlist(
     drive_id: str,
     db: AsyncSession = Depends(get_db),
-    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
+    current_user: User = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
 ):
+    if current_user.role == UserRole.COMPANY:
+        drive = await _get_drive_or_404(drive_id, db)
+        company_result = await db.execute(
+            select(Company).where(Company.user_id == current_user.id)
+        )
+        company = company_result.scalar_one_or_none()
+        if not company or drive.company_id != company.id:
+            raise HTTPException(status_code=403, detail="You can only view your own company's shortlist")
+
     result = await db.execute(
         select(MatchScore)
         .options(selectinload(MatchScore.student))

@@ -1,26 +1,49 @@
 """
 Matcher Agent — embeds student profiles + JD, finds top-k matches via ChromaDB.
-Uses Google embeddings with small batches + retry. Falls back to TF-IDF if embedding fails.
+
+Embeddings go straight to the Gemini REST API (bypassing langchain-google-genai,
+which hangs 60s -> 504 on every embedding model under this project's pinned
+version). Falls back to TF-IDF if the REST call fails.
 """
 import asyncio
-import json
 import math
 from typing import Any
 from collections import Counter
 import chromadb
+import httpx
 from chromadb.config import Settings as ChromaSettings
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.config import settings
 from app.agents.jd_analyst import explain_match
 from loguru import logger
 
+GEMINI_EMBED_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents"
+)
 
-def get_embedder():
-    return GoogleGenerativeAIEmbeddings(
-        model=settings.EMBEDDING_MODEL,
-        google_api_key=settings.GEMINI_API_KEY,
-        request_options={"timeout": 30},   # 30s per request, not 60s
-    )
+
+async def _embed_texts_rest(texts: list[str], task_type: str) -> list[list[float]]:
+    """Embed a batch of texts via direct Gemini REST call (batchEmbedContents).
+
+    task_type must be RETRIEVAL_DOCUMENT for indexed content (student profiles)
+    or RETRIEVAL_QUERY for the search query (the JD) — matching is asymmetric.
+    """
+    model = settings.EMBEDDING_MODEL
+    url = GEMINI_EMBED_URL.format(model=model)
+    payload = {
+        "requests": [
+            {
+                "model": f"models/{model}",
+                "content": {"parts": [{"text": t}]},
+                "task_type": task_type,
+            }
+            for t in texts
+        ]
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, params={"key": settings.GEMINI_API_KEY}, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return [e["values"] for e in data["embeddings"]]
 
 
 def get_chroma_client():
@@ -97,13 +120,13 @@ def _fallback_match(students: list[dict], jd_parsed: dict, top_k: int) -> list[d
     ]
 
 
-# ─── Embed with retry + small batches ────────────────────────────────────────
+# ─── Embed with retry ──────────────────────────────────────────────────────
 
-async def _embed_batch_with_retry(embedder, texts: list[str], retries: int = 2) -> list:
-    """Embed a small batch with retry on timeout."""
+async def _embed_batch_with_retry(texts: list[str], task_type: str, retries: int = 2) -> list:
+    """Embed a batch via direct REST, with retry on transient failure."""
     for attempt in range(retries + 1):
         try:
-            return await embedder.aembed_documents(texts)
+            return await _embed_texts_rest(texts, task_type)
         except Exception as e:
             if attempt < retries:
                 wait = 2 ** attempt  # 1s, 2s backoff
@@ -134,7 +157,6 @@ async def index_students_for_drive(
         metadata={"hnsw:space": "cosine"},
     )
 
-    embedder = get_embedder()
     texts = [_student_to_text(s) for s in students]
     ids = [s["id"] for s in students]
     metadatas = [
@@ -147,8 +169,10 @@ async def index_students_for_drive(
         for s in students
     ]
 
-    # Small batches of 5 to avoid 60s API timeout
-    BATCH_SIZE = 5
+    # Direct REST embedding is ~1s regardless of batch size (verified against
+    # the live API) — batches of 20 keep individual requests small without the
+    # old 5-per-batch / 60s-timeout workaround that langchain needed.
+    BATCH_SIZE = 20
     embedded_ok = True
     for i in range(0, len(texts), BATCH_SIZE):
         batch_texts = texts[i: i + BATCH_SIZE]
@@ -156,7 +180,7 @@ async def index_students_for_drive(
         batch_meta = metadatas[i: i + BATCH_SIZE]
 
         try:
-            embeddings = await _embed_batch_with_retry(embedder, batch_texts)
+            embeddings = await _embed_batch_with_retry(batch_texts, task_type="RETRIEVAL_DOCUMENT")
             collection.add(
                 ids=batch_ids,
                 embeddings=embeddings,
@@ -164,16 +188,13 @@ async def index_students_for_drive(
                 metadatas=batch_meta,
             )
             logger.debug(f"Embedded batch {i//BATCH_SIZE + 1}/{math.ceil(len(texts)/BATCH_SIZE)}")
-            # Small delay between batches to avoid rate limits
-            if i + BATCH_SIZE < len(texts):
-                await asyncio.sleep(0.3)
         except Exception as e:
             logger.error(f"Embedding batch {i}-{i+BATCH_SIZE} failed permanently: {e}")
             embedded_ok = False
             break
 
     if embedded_ok:
-        logger.info(f"Indexed {len(students)} students for drive {drive_id} via Google embeddings")
+        logger.info(f"Indexed {len(students)} students for drive {drive_id} via Gemini embeddings")
     else:
         logger.warning(f"Partial index for drive {drive_id} — will use TF-IDF fallback")
 
@@ -207,13 +228,12 @@ async def match_students_to_jd(
             return _fallback_match(students, jd_parsed, top_k)
         return []
 
-    embedder = get_embedder()
     jd_text = _jd_to_text(jd_parsed)
 
     try:
         jd_embedding = await _embed_batch_with_retry(
-            embedder,
             [jd_text],   # embed as single document then use as query
+            task_type="RETRIEVAL_QUERY",
         )
         # Use first embedding as query
         results = collection.query(

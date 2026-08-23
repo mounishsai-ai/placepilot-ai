@@ -49,6 +49,9 @@ export default function StudentDashboard() {
   const [notifications, setNotifications] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [skillAdvice, setSkillAdvice] = useState<string | null>(null);
+  const [skillAdviceRole, setSkillAdviceRole] = useState<string | null>(null);
+  const [skillAdviceLoading, setSkillAdviceLoading] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useStudentWebSocket(studentId);
@@ -69,6 +72,14 @@ export default function StudentDashboard() {
       ]);
       setSchedule(schedRes.data);
       setNotifications(notifRes.data);
+
+      studentsAPI.getSkillAdvice()
+        .then((res) => {
+          setSkillAdvice(res.data.advice);
+          setSkillAdviceRole(res.data.based_on_role);
+        })
+        .catch(() => setSkillAdvice("Couldn't generate skill advice right now — try again shortly."))
+        .finally(() => setSkillAdviceLoading(false));
     } catch (err: unknown) {
       const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
       if (msg?.includes("No student record")) {
@@ -187,11 +198,17 @@ export default function StudentDashboard() {
                       </div>
                       <div className="flex items-center gap-2">
                         <a
-                          href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}${(profile as Record<string,unknown>)?.resume_url as string}${
-                            (profile as Record<string,unknown>)?.resume_uploaded_at
-                              ? `?v=${new Date((profile as Record<string,unknown>).resume_uploaded_at as string).getTime()}`
-                              : ""
-                          }`}
+                          href={(() => {
+                            const p = profile as Record<string, unknown>;
+                            const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+                            const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+                            const params = new URLSearchParams();
+                            if (token) params.set("token", token);
+                            if (p?.resume_uploaded_at) {
+                              params.set("v", String(new Date(p.resume_uploaded_at as string).getTime()));
+                            }
+                            return `${base}${p?.resume_url as string}?${params.toString()}`;
+                          })()}
                           target="_blank"
                           rel="noreferrer"
                           className="text-blue-400 text-xs flex items-center gap-1 hover:text-blue-300"
@@ -255,44 +272,32 @@ export default function StudentDashboard() {
             <BookOpen size={16} className="text-purple-400" />
             <h2 className="text-white font-semibold">AI Skill Gap Advice</h2>
             <span className="badge badge-purple ml-2 text-[10px]">Gemini Powered</span>
+            {skillAdviceRole && (
+              <span className="text-white/30 text-[11px] ml-auto">
+                based on demand for <span className="text-white/50">{skillAdviceRole}</span>
+              </span>
+            )}
           </div>
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              {
-                skill: "Data Structures & Algorithms",
-                priority: "High",
-                drives: 4,
-                tip: "Practice LeetCode Medium problems. Focus on arrays, trees, and dynamic programming.",
-                color: "border-rose-500/25 bg-rose-500/[0.04]",
-                badge: "badge-rose",
-              },
-              {
-                skill: "System Design",
-                priority: "Medium",
-                drives: 3,
-                tip: "Read 'Designing Data-Intensive Applications'. Practice designing URL shorteners, chat systems.",
-                color: "border-amber-500/25 bg-amber-500/[0.04]",
-                badge: "badge-amber",
-              },
-              {
-                skill: "Cloud (AWS/GCP)",
-                priority: "Medium",
-                drives: 3,
-                tip: "Get AWS Cloud Practitioner certified. Hands-on with S3, EC2, Lambda basics.",
-                color: "border-blue-500/25 bg-blue-500/[0.04]",
-                badge: "badge-blue",
-              },
-            ].map((item) => (
-              <div key={item.skill} className={`rounded-xl border p-4 ${item.color}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`badge text-[10px] ${item.badge}`}>{item.priority} Priority</span>
-                  <span className="text-white/30 text-[10px]">{item.drives} drives require this</span>
-                </div>
-                <div className="text-white font-semibold text-sm mb-2">{item.skill}</div>
-                <p className="text-white/45 text-xs leading-relaxed">{item.tip}</p>
-              </div>
-            ))}
-          </div>
+          {skillAdviceLoading ? (
+            <div className="space-y-2 animate-pulse">
+              <div className="h-3 bg-white/[0.06] rounded w-5/6" />
+              <div className="h-3 bg-white/[0.06] rounded w-4/6" />
+              <div className="h-3 bg-white/[0.06] rounded w-3/6" />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(skillAdvice ?? "")
+                .split("\n")
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line, i) => (
+                  <div key={i} className="flex items-start gap-2 text-white/60 text-xs leading-relaxed">
+                    <span className="text-purple-400 mt-0.5">•</span>
+                    <span>{line.replace(/^[-*•]\s*/, "")}</span>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
 
         {/* ── Active Drives / Matches ──────────────────────────────────── */}
