@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { motion } from "framer-motion";
+
 import {
   Briefcase, Users, Award, TrendingUp,
   Play, CheckCircle, AlertTriangle, Zap,
@@ -134,10 +134,8 @@ export default function TPODashboard() {
                   {pendingDrives.map((d) => d.title as string).join(" · ")}
                 </p>
               </div>
-              <button className="btn-secondary text-sm border-amber-500/30 text-amber-300">
-                Review Now
-              </button>
             </motion.div>
+
           )}
 
           {/* ── KPI Row ───────────────────────────────────────────────── */}
@@ -254,56 +252,28 @@ export default function TPODashboard() {
             </div>
           </div>
 
-          {/* ── Stats Row ─────────────────────────────────────────────── */}
-          <div className="grid grid-cols-3 gap-5">
-            <div className="glass-card">
-              <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-4">
-                Pipeline Status
-              </h3>
-              <div className="space-y-3">
-                {[
-                  { label: "Pending Approvals", value: (kpis as Record<string,unknown>)?.pending_approvals ?? 0, color: "bg-amber-400" },
-                  { label: "Completed Drives",  value: (kpis as Record<string,unknown>)?.completed_drives ?? 0,  color: "bg-emerald-400" },
-                  { label: "Total Students",    value: (kpis as Record<string,unknown>)?.total_students ?? 0,    color: "bg-blue-400"    },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${item.color}`} />
-                      <span className="text-white/60 text-sm">{item.label}</span>
-                    </div>
-                    <span className="text-white font-semibold text-sm">{String(item.value)}</span>
+          {/* ── Pipeline Status ───────────────────────────────────────── */}
+          <div className="glass-card">
+            <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-4">
+              Pipeline Status
+            </h3>
+            <div className="grid grid-cols-3 gap-6">
+              {[
+                { label: "Pending Approvals", value: (kpis as Record<string,unknown>)?.pending_approvals ?? 0, color: "bg-amber-400" },
+                { label: "Completed Drives",  value: (kpis as Record<string,unknown>)?.completed_drives ?? 0,  color: "bg-emerald-400" },
+                { label: "Total Students",    value: (kpis as Record<string,unknown>)?.total_students ?? 0,    color: "bg-blue-400"    },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${item.color}`} />
+                    <span className="text-white/60 text-sm">{item.label}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="glass-card col-span-2">
-              <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-4">
-                Quick Actions
-              </h3>
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { label: "New Drive",          icon: "🏢", href: "/tpo/drives/new"     },
-                  { label: "View Students",       icon: "👥", href: "/tpo/students"       },
-                  { label: "Analytics",           icon: "📊", href: "/tpo/analytics"      },
-                  { label: "Schedule Interview",  icon: "📅", href: "/tpo/schedule"       },
-                  { label: "Send Notifications",  icon: "🔔", href: "/tpo/notifications"  },
-                  { label: "Export Report",       icon: "📄", href: "#"                   },
-                ].map((action) => (
-                  <motion.a
-                    key={action.label}
-                    href={action.href}
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/[0.14] transition-all cursor-pointer text-center"
-                  >
-                    <span className="text-2xl">{action.icon}</span>
-                    <span className="text-white/60 text-xs font-medium">{action.label}</span>
-                  </motion.a>
-                ))}
-              </div>
+                  <span className="text-white font-semibold text-sm">{String(item.value)}</span>
+                </div>
+              ))}
             </div>
           </div>
+
 
           {/* ── Exceptions + Audit Trail ─────────────────────────────────── */}
           <div className="grid grid-cols-5 gap-6">
