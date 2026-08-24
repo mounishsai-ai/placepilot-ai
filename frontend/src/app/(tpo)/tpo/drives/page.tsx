@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
-import { drivesAPI } from "@/lib/api";
+import { drivesAPI, scheduleAPI } from "@/lib/api";
 import { useTPOWebSocket } from "@/lib/websocket";
 import { useDashboardStore } from "@/lib/store";
 import toast from "react-hot-toast";
@@ -332,19 +332,209 @@ function ShortlistModal({
   );
 }
 
+// ─── Schedule Round Modal ────────────────────────────────────────────────────
+
+function ScheduleRoundModal({
+  driveId,
+  onClose,
+  onScheduled,
+}: {
+  driveId: string;
+  onClose: () => void;
+  onScheduled: () => void;
+}) {
+  const today = new Date();
+  today.setDate(today.getDate() + 1); // default: tomorrow
+  const defaultDate = today.toISOString().slice(0, 16); // "YYYY-MM-DDThh:mm"
+
+  const [startDatetime, setStartDatetime] = useState(defaultDate);
+  const [endDatetime, setEndDatetime]     = useState(
+    new Date(today.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16) // +8h
+  );
+  const [slotDuration, setSlotDuration]   = useState(30);
+  const [mode, setMode]                   = useState<"offline" | "online">("offline");
+  const [venue, setVenue]                 = useState("");
+  const [scheduling, setScheduling]       = useState(false);
+
+  const handleSchedule = async () => {
+    if (!startDatetime || !endDatetime) {
+      toast.error("Please set both start and end date/time");
+      return;
+    }
+    setScheduling(true);
+    try {
+      // Step 1: create the round
+      const roundRes = await scheduleAPI.createRound({
+        drive_id: driveId,
+        round_no: 1,
+        round_type: "technical",
+        start_datetime: new Date(startDatetime).toISOString(),
+        end_datetime:   new Date(endDatetime).toISOString(),
+        slot_duration_min: slotDuration,
+        mode,
+        venue: mode === "offline" ? venue : undefined,
+      });
+      const roundId: string = (roundRes.data as { id: string }).id;
+
+      // Step 2: auto-schedule slots (FCFS)
+      await scheduleAPI.autoSchedule(roundId);
+
+      toast.success("\u2705 Interviews auto-scheduled! Confirm to notify students.");
+      onScheduled();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg ?? "Failed to create schedule");
+    } finally {
+      setScheduling(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="glass-card w-full max-w-lg mx-4"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-white font-bold text-lg">&#x1F4C5; Create Interview Round</h2>
+            <p className="text-white/40 text-sm mt-0.5">Set the date window — FCFS algorithm assigns slots automatically</p>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {/* Date/time inputs */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">
+                Start Date &amp; Time
+              </label>
+              <input
+                type="datetime-local"
+                value={startDatetime}
+                onChange={(e) => setStartDatetime(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-white/[0.06] border border-white/[0.1] text-white text-sm focus:outline-none focus:border-blue-400/60"
+              />
+            </div>
+            <div>
+              <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">
+                End Date &amp; Time
+              </label>
+              <input
+                type="datetime-local"
+                value={endDatetime}
+                onChange={(e) => setEndDatetime(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-white/[0.06] border border-white/[0.1] text-white text-sm focus:outline-none focus:border-blue-400/60"
+              />
+            </div>
+          </div>
+
+          {/* Slot duration */}
+          <div>
+            <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">
+              Slot Duration (minutes)
+            </label>
+            <select
+              value={slotDuration}
+              onChange={(e) => setSlotDuration(Number(e.target.value))}
+              className="w-full px-3 py-2 rounded-xl bg-white/[0.06] border border-white/[0.1] text-white text-sm focus:outline-none focus:border-blue-400/60"
+            >
+              {[15, 20, 30, 45, 60].map((d) => (
+                <option key={d} value={d} className="bg-gray-900">{d} min</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Mode */}
+          <div>
+            <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">
+              Mode
+            </label>
+            <div className="flex gap-2">
+              {(["offline", "online"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all border ${
+                    mode === m
+                      ? "bg-blue-500/20 border-blue-500/40 text-blue-300"
+                      : "bg-white/[0.03] border-white/[0.08] text-white/40 hover:text-white/60"
+                  }`}
+                >
+                  {m === "offline" ? "\uD83C\uDFEB Offline" : "\uD83D\uDCBB Online"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Venue (offline only) */}
+          {mode === "offline" && (
+            <div>
+              <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">
+                Venue / Room (optional)
+              </label>
+              <input
+                type="text"
+                value={venue}
+                onChange={(e) => setVenue(e.target.value)}
+                placeholder="e.g. Seminar Hall A"
+                className="w-full px-3 py-2 rounded-xl bg-white/[0.06] border border-white/[0.1] text-white text-sm placeholder-white/20 focus:outline-none focus:border-blue-400/60"
+              />
+            </div>
+          )}
+
+          {/* Info box */}
+          <div className="bg-blue-500/[0.08] border border-blue-500/20 rounded-xl px-4 py-3 flex items-start gap-3">
+            <Zap size={15} className="text-blue-400 flex-shrink-0 mt-0.5" />
+            <p className="text-blue-300/80 text-xs">
+              The FCFS algorithm will auto-assign rooms and panel members, with no conflicts.
+              You&apos;ll review the generated schedule before students are notified.
+            </p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 pt-5 mt-5 border-t border-white/[0.06]">
+          <button onClick={onClose} className="btn-ghost">Cancel</button>
+          <button
+            onClick={handleSchedule}
+            disabled={scheduling}
+            className="btn-primary flex items-center gap-2"
+          >
+            {scheduling ? (
+              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Scheduling…</>
+            ) : (
+              <><Calendar size={15} /> Auto-Schedule Interviews</>
+            )}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // ─── Drive Card ───────────────────────────────────────────────────────────────
 
 function DriveCard({
   drive,
   onRunPipeline,
   onReviewShortlist,
+  onCreateRound,
   onConfirmSchedule,
+  onViewSchedule,
   liveEvents,
 }: {
   drive: Drive;
   onRunPipeline: (id: string) => void;
   onReviewShortlist: (id: string) => void;
+  onCreateRound: (id: string) => void;
   onConfirmSchedule: (id: string) => void;
+  onViewSchedule: () => void;
   liveEvents: AgentEvent[];
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -443,6 +633,15 @@ function DriveCard({
               <span className="text-amber-300">Review Shortlist</span>
             </button>
           )}
+          {drive.status === "shortlist_approved" && (
+            <button
+              onClick={() => onCreateRound(drive.id)}
+              className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 !bg-blue-500/20 !border-blue-500/40 hover:!bg-blue-500/30"
+            >
+              <Calendar size={13} className="text-blue-400" />
+              <span className="text-blue-300">Create Round &amp; Schedule</span>
+            </button>
+          )}
           {drive.status === "schedule_pending" && (
             <button
               onClick={() => onConfirmSchedule(drive.id)}
@@ -450,6 +649,15 @@ function DriveCard({
             >
               <Calendar size={13} className="text-amber-400" />
               <span className="text-amber-300">Confirm Schedule</span>
+            </button>
+          )}
+          {(drive.status === "scheduled" || drive.status === "ongoing") && (
+            <button
+              onClick={() => onViewSchedule()}
+              className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 !bg-emerald-500/20 !border-emerald-500/40 hover:!bg-emerald-500/30"
+            >
+              <CheckCircle size={13} className="text-emerald-400" />
+              <span className="text-emerald-300">View Schedule</span>
             </button>
           )}
           <button
@@ -529,11 +737,13 @@ function DriveCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DrivesPage() {
+  const router = useRouter();
   const [drives, setDrives] = useState<Drive[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningId, setRunningId] = useState<string | null>(null);
   const [shortlistDriveId, setShortlistDriveId] = useState<string | null>(null);
   const [shortlistCandidates, setShortlistCandidates] = useState<ShortlistCandidate[]>([]);
+  const [scheduleRoundDriveId, setScheduleRoundDriveId] = useState<string | null>(null);
   const [pollingActive, setPollingActive] = useState(false);
   const { connected } = useTPOWebSocket();
   const { agentEvents } = useDashboardStore();
@@ -664,7 +874,9 @@ export default function DrivesPage() {
                   drive={drive}
                   onRunPipeline={handleRunPipeline}
                   onReviewShortlist={handleReviewShortlist}
+                  onCreateRound={(id) => setScheduleRoundDriveId(id)}
                   onConfirmSchedule={handleConfirmSchedule}
+                  onViewSchedule={() => router.push("/tpo/schedule")}
                   liveEvents={agentEvents.filter((e) => e.drive_id === drive.id)}
                 />
               ))}
@@ -681,6 +893,18 @@ export default function DrivesPage() {
           onClose={() => setShortlistDriveId(null)}
           onApproved={() => {
             setShortlistDriveId(null);
+            fetchDrives();
+          }}
+        />
+      )}
+
+      {/* Schedule round modal */}
+      {scheduleRoundDriveId && (
+        <ScheduleRoundModal
+          driveId={scheduleRoundDriveId}
+          onClose={() => setScheduleRoundDriveId(null)}
+          onScheduled={() => {
+            setScheduleRoundDriveId(null);
             fetchDrives();
           }}
         />
