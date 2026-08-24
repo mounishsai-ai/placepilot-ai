@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { motion } from "framer-motion";
 
 import {
-  Briefcase, Users, Award, TrendingUp,
-  Play, CheckCircle, AlertTriangle, Zap,
+  Briefcase, Award, TrendingUp,
+  Play, AlertTriangle, Zap,
   ShieldAlert, History, Bot, UserCheck,
 } from "lucide-react";
+
 import { formatDistanceToNow } from "date-fns";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
@@ -49,6 +51,30 @@ const STATUS_LABEL: Record<string, string> = {
   completed:           "Completed",
 };
 
+// Merge WS live events + historical audit trail for the Agent Activity feed
+function mergeEvents(
+  wsEvents: { event_type: string; agent_name: string; drive_id?: string; payload?: Record<string, unknown>; created_at: string }[],
+  auditEvents: Record<string, unknown>[]
+) {
+  const fromAudit = auditEvents.map((e) => ({
+    event_type: e.event_type as string,
+    agent_name: (e.actor === "tpo" ? "human_tpo" : e.agent_name ?? "system") as string,
+    drive_id: e.drive_id as string | undefined,
+    payload: { drive: e.drive_title },
+    created_at: e.created_at as string,
+  }));
+  // WS events (live, newest) come first, then historical
+  const combined = [...wsEvents, ...fromAudit];
+  // Deduplicate by created_at + event_type
+  const seen = new Set<string>();
+  return combined.filter((e) => {
+    const key = `${e.event_type}:${e.created_at}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 50);
+}
+
 export default function TPODashboard() {
   const { agentEvents } = useDashboardStore();
   const { connected } = useTPOWebSocket();
@@ -88,7 +114,7 @@ export default function TPODashboard() {
       setExceptions(excRes.data);
       setAuditTrail(auditRes.data);
     } catch {
-      // non-fatal — these are supplementary panels, don't block the main dashboard
+      // non-fatal
     } finally {
       setExceptionsLoading(false);
     }
@@ -99,12 +125,18 @@ export default function TPODashboard() {
   const handleRunPipeline = async (driveId: string, company: string) => {
     try {
       await drivesAPI.runPipeline(driveId);
-      toast.success(`Pipeline started for ${company}`);
-      setTimeout(fetchData, 2000);
+      toast.success(`Pipeline started for ${company} — check Agent Activity for live updates`);
+      // Poll for updates — pipeline takes 25-65s
+      setTimeout(fetchData, 5000);
+      setTimeout(fetchData, 15000);
+      setTimeout(fetchData, 35000);
     } catch {
       toast.error("Failed to start pipeline");
     }
   };
+
+  // Combined feed: live WS events first, then historical from DB
+  const combinedFeed = mergeEvents(agentEvents, auditTrail);
 
   return (
     <div className="flex min-h-screen bg-cosmic">
@@ -174,72 +206,94 @@ export default function TPODashboard() {
             />
           </div>
 
-          {/* ── Main Content: Drives Table + Agent Feed ────────────────── */}
-          <div className="grid grid-cols-5 gap-6">
-            {/* Drive Pipeline Table — 65% */}
-            <div className="col-span-3 glass-card">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-white font-semibold text-base">Placement Drives</h2>
-                <span className="badge-blue badge">{drives.length} drives</span>
-              </div>
-
-              {loading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-14 rounded-xl bg-white/[0.04] animate-pulse" />
-                  ))}
-                </div>
-              ) : (
-                <table className="glass-table">
-                  <thead>
-                    <tr>
-                      <th>Company</th>
-                      <th>Role</th>
-                      <th>Package</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {drives.slice(0, 10).map((drive) => (
-                      <tr key={drive.id as string}>
-                        <td className="font-medium text-white/90">{drive.company as string}</td>
-                        <td className="text-white/60 text-xs max-w-[140px] truncate">
-                          {drive.title as string}
-                        </td>
-                        <td>
-                          <span className="text-emerald-400 font-semibold text-xs">
-                            {drive.package_lpa ? `${drive.package_lpa} LPA` : "—"}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={STATUS_BADGE[drive.status as string] ?? "pipeline-step pending"}>
-                            {STATUS_LABEL[drive.status as string] ?? drive.status as string}
-                          </span>
-                        </td>
-                        <td>
-                          {(drive.status as string) === "draft" || (drive.status as string) === "jd_analyzed" ? (
-                            <motion.button
-                              whileHover={{ scale: 1.05 }}
-                              whileTap={{ scale: 0.95 }}
-                              onClick={() => handleRunPipeline(drive.id as string, drive.company as string)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-semibold transition-colors"
-                            >
-                              <Play size={11} fill="currentColor" />
-                              Run Pipeline
-                            </motion.button>
-                          ) : (
-                            <span className="text-white/20 text-xs">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+          {/* ── Drives Table — full width ───────────────────────────────── */}
+          <div className="glass-card">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-white font-semibold text-base">Placement Drives</h2>
+              <span className="badge-blue badge">{drives.length} drives</span>
             </div>
 
-            {/* Agent Live Feed — 35% */}
+            {loading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-14 rounded-xl bg-white/[0.04] animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <table className="glass-table">
+                <thead>
+                  <tr>
+                    <th>Company</th>
+                    <th>Role</th>
+                    <th>Package</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drives.slice(0, 10).map((drive) => (
+                    <tr key={drive.id as string}>
+                      <td className="font-medium text-white/90">{drive.company as string}</td>
+                      <td className="text-white/60 text-xs max-w-[200px] truncate">
+                        {drive.title as string}
+                      </td>
+                      <td>
+                        <span className="text-emerald-400 font-semibold text-xs">
+                          {drive.package_lpa ? `${drive.package_lpa} LPA` : "—"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={STATUS_BADGE[drive.status as string] ?? "pipeline-step pending"}>
+                          {STATUS_LABEL[drive.status as string] ?? drive.status as string}
+                        </span>
+                      </td>
+                      <td>
+                        {(drive.status as string) === "draft" || (drive.status as string) === "jd_analyzed" ? (
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => handleRunPipeline(drive.id as string, drive.company as string)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-semibold transition-colors"
+                          >
+                            <Play size={11} fill="currentColor" />
+                            Run Pipeline
+                          </motion.button>
+                        ) : (
+                          <span className="text-white/20 text-xs">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* ── Pipeline Status + Agent Activity ──────────────────────── */}
+          <div className="grid grid-cols-3 gap-5">
+            {/* Pipeline Status — 1/3 */}
+            <div className="glass-card">
+              <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-4">
+                Pipeline Status
+              </h3>
+              <div className="space-y-3">
+                {[
+                  { label: "Pending Approvals", value: (kpis as Record<string,unknown>)?.pending_approvals ?? 0, color: "bg-amber-400" },
+                  { label: "Completed Drives",  value: (kpis as Record<string,unknown>)?.completed_drives ?? 0,  color: "bg-emerald-400" },
+                  { label: "Total Students",    value: (kpis as Record<string,unknown>)?.total_students ?? 0,    color: "bg-blue-400"    },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${item.color}`} />
+                      <span className="text-white/60 text-sm">{item.label}</span>
+                    </div>
+                    <span className="text-white font-semibold text-sm">{String(item.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Agent Activity — 2/3, fed from WS + historical audit trail */}
             <div className="col-span-2 glass-card">
               <div className="flex items-center gap-2 mb-5">
                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -247,30 +301,11 @@ export default function TPODashboard() {
                 {connected && (
                   <span className="ml-auto badge-green badge text-[10px]">LIVE</span>
                 )}
+                {!connected && combinedFeed.length > 0 && (
+                  <span className="ml-auto text-white/30 text-[10px]">historical</span>
+                )}
               </div>
-              <AgentEventFeed events={agentEvents} />
-            </div>
-          </div>
-
-          {/* ── Pipeline Status ───────────────────────────────────────── */}
-          <div className="glass-card">
-            <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-4">
-              Pipeline Status
-            </h3>
-            <div className="grid grid-cols-3 gap-6">
-              {[
-                { label: "Pending Approvals", value: (kpis as Record<string,unknown>)?.pending_approvals ?? 0, color: "bg-amber-400" },
-                { label: "Completed Drives",  value: (kpis as Record<string,unknown>)?.completed_drives ?? 0,  color: "bg-emerald-400" },
-                { label: "Total Students",    value: (kpis as Record<string,unknown>)?.total_students ?? 0,    color: "bg-blue-400"    },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${item.color}`} />
-                    <span className="text-white/60 text-sm">{item.label}</span>
-                  </div>
-                  <span className="text-white font-semibold text-sm">{String(item.value)}</span>
-                </div>
-              ))}
+              <AgentEventFeed events={combinedFeed} />
             </div>
           </div>
 
