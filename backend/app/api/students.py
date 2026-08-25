@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 from jose import JWTError, jwt
 import os, uuid, aiofiles
@@ -73,6 +73,8 @@ async def _assert_student_access(student_id: str, current_user: User, db: AsyncS
 
 class UpdateStudentRequest(BaseModel):
     cgpa: Optional[float] = None
+    branch: Optional[str] = None
+    batch: Optional[int] = None
     backlogs_active: Optional[int] = None
     attendance_pct: Optional[float] = None
     linkedin_url: Optional[str] = None
@@ -209,6 +211,39 @@ async def upload_my_resume(
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(content)
 
+    # Trigger Gemini parsing in a separate thread to not block the event loop
+    import asyncio
+    from app.agents.resume_parser import parse_resume_with_gemini
+    from app.models.models import StudentSkill
+    
+    parsed = await asyncio.to_thread(parse_resume_with_gemini, filepath)
+    
+    if parsed:
+        if parsed.get("cgpa"):
+            student.cgpa = parsed["cgpa"]
+        if parsed.get("branch"):
+            student.branch = parsed["branch"]
+        if parsed.get("batch"):
+            student.batch = parsed["batch"]
+        if parsed.get("linkedin_url"):
+            student.linkedin_url = parsed["linkedin_url"]
+        if parsed.get("github_url"):
+            student.github_url = parsed["github_url"]
+            
+        skills_list = parsed.get("skills", [])
+        if skills_list:
+            # Delete old skills
+            await db.execute(delete(StudentSkill).where(StudentSkill.student_id == student.id))
+            # Insert new skills
+            for sk in skills_list:
+                db.add(StudentSkill(
+                    student_id=student.id,
+                    skill=sk,
+                    proficiency="intermediate", # default
+                    years_experience=0
+                ))
+            student.skills_summary = ", ".join(skills_list)
+
     student.resume_url = f"/api/students/{student.id}/resume"
     student.resume_uploaded_at = datetime.utcnow()
     await db.commit()
@@ -217,6 +252,7 @@ async def upload_my_resume(
         "resume_uploaded_at": student.resume_uploaded_at.isoformat(),
         "filename": filename,
         "size_mb": round(size_mb, 2),
+        "extracted": parsed
     }
 
 
@@ -349,6 +385,51 @@ async def get_student(
             for sk in student.skills
         ],
     }
+
+
+@router.put("/me")
+async def update_my_profile(
+    body: UpdateStudentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Student).where(Student.email == current_user.email))
+    student = result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    if body.cgpa is not None:
+        student.cgpa = body.cgpa
+    if body.branch is not None:
+        student.branch = body.branch
+    if body.batch is not None:
+        student.batch = body.batch
+    if body.backlogs_active is not None:
+        student.backlogs_active = body.backlogs_active
+    if body.attendance_pct is not None:
+        student.attendance_pct = body.attendance_pct
+    if body.linkedin_url is not None:
+        student.linkedin_url = body.linkedin_url
+    if body.github_url is not None:
+        student.github_url = body.github_url
+
+    if body.skills is not None:
+        # Remove existing skills
+        existing_skills = await db.execute(
+            select(StudentSkill).where(StudentSkill.student_id == student.id)
+        )
+        for sk in existing_skills.scalars().all():
+            await db.delete(sk)
+        # Add new skills
+        for sk in body.skills:
+            db.add(StudentSkill(
+                student_id=student.id, skill=sk.skill,
+                proficiency=sk.proficiency, years_experience=sk.years_experience,
+            ))
+        student.skills_summary = ", ".join([sk.skill for sk in body.skills])
+
+    await db.commit()
+    return {"message": "Profile updated successfully"}
 
 
 @router.put("/{student_id}")

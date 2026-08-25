@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Bell, Calendar, Zap, BookOpen, Upload, FileText, ExternalLink } from "lucide-react";
+import { Bell, Calendar, Zap, BookOpen, Upload, FileText, ExternalLink, Edit2, X } from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
 import { studentsAPI, notificationsAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
@@ -112,6 +112,51 @@ export default function StudentDashboard() {
     }
   };
 
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    cgpa: "", branch: "", batch: "", backlogs_active: "", attendance_pct: "", skillsText: ""
+  });
+  
+  const openEditModal = () => {
+    const p = profile as Record<string,any> | null;
+    if (!p) return;
+    setEditForm({
+      cgpa: p.cgpa?.toString() || "",
+      branch: p.branch || "",
+      batch: p.batch?.toString() || "",
+      backlogs_active: p.backlogs_active?.toString() || "",
+      attendance_pct: p.attendance_pct?.toString() || "",
+      skillsText: (p.skills || []).map((s: any) => s.skill).join(", ")
+    });
+    setIsEditModalOpen(true);
+  };
+  
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const skills = editForm.skillsText.split(",")
+        .map(s => s.trim()).filter(s => s.length > 0)
+        .map(skill => ({ skill, proficiency: "intermediate", years_experience: 0 }));
+        
+      await studentsAPI.updateMe({
+        cgpa: editForm.cgpa ? parseFloat(editForm.cgpa) : null,
+        branch: editForm.branch || null,
+        batch: editForm.batch ? parseInt(editForm.batch, 10) : null,
+        backlogs_active: editForm.backlogs_active ? parseInt(editForm.backlogs_active, 10) : null,
+        attendance_pct: editForm.attendance_pct ? parseFloat(editForm.attendance_pct) : null,
+        skills: skills.length > 0 ? skills : null
+      });
+      
+      const meRes = await studentsAPI.getMe();
+      setProfile(meRes.data);
+      setIsEditModalOpen(false);
+      toast.success("Profile updated successfully!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update profile");
+    }
+  };
+
   useEffect(() => {
     if (user) fetchData();
   }, [user, fetchData]);
@@ -159,9 +204,14 @@ export default function StudentDashboard() {
             transition={{ delay: 0.1 }}
             className="glass-card"
           >
-            <h2 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-4">
-              My Profile
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white/50 text-xs font-semibold uppercase tracking-wider">
+                My Profile
+              </h2>
+              <button onClick={openEditModal} className="text-white/30 hover:text-white transition-colors">
+                <Edit2 size={12} />
+              </button>
+            </div>
             {loading ? (
               <div className="space-y-3">
                 {[1,2,3,4].map(i => <div key={i} className="h-6 rounded bg-white/[0.04] animate-pulse" />)}
@@ -172,12 +222,12 @@ export default function StudentDashboard() {
                   { label: "CGPA",            value: (profile as Record<string,unknown>)?.cgpa       },
                   { label: "Branch",           value: (profile as Record<string,unknown>)?.branch     },
                   { label: "Batch",            value: (profile as Record<string,unknown>)?.batch      },
-                  { label: "Active Backlogs",  value: (profile as Record<string,unknown>)?.backlogs_active ?? 0 },
-                  { label: "Attendance",       value: `${(profile as Record<string,unknown>)?.attendance_pct ?? 0}%` },
+                  { label: "Active Backlogs",  value: (profile as Record<string,unknown>)?.backlogs_active },
+                  { label: "Attendance",       value: (profile as Record<string,unknown>)?.attendance_pct != null ? `${(profile as Record<string,unknown>).attendance_pct}%` : null },
                 ].map(item => (
                   <div key={item.label} className="flex justify-between">
                     <span className="text-white/40 text-sm">{item.label}</span>
-                    <span className="text-white font-semibold text-sm">{String(item.value ?? "—")}</span>
+                    <span className="text-white font-semibold text-sm">{item.value != null ? String(item.value) : "—"}</span>
                   </div>
                 ))}
 
@@ -192,7 +242,7 @@ export default function StudentDashboard() {
                         </div>
                         {typeof (profile as Record<string,unknown>)?.resume_uploaded_at === "string" && (
                           <span className="text-white/30 text-[10px] pl-[18px]">
-                            Updated {formatDistanceToNow(new Date((profile as Record<string,unknown>).resume_uploaded_at as string), { addSuffix: true })}
+                            Updated {formatDistanceToNow(new Date((profile as Record<string,unknown>).resume_uploaded_at as string + (((profile as Record<string,unknown>).resume_uploaded_at as string).endsWith('Z') ? '' : 'Z')), { addSuffix: true })}
                           </span>
                         )}
                       </div>
@@ -248,20 +298,29 @@ export default function StudentDashboard() {
             transition={{ delay: 0.2 }}
             className="glass-card"
           >
-            <h2 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-4">
-              My Skills
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white/50 text-xs font-semibold uppercase tracking-wider">
+                My Skills
+              </h2>
+              <button onClick={openEditModal} className="text-white/30 hover:text-white transition-colors">
+                <Edit2 size={12} />
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2">
-              {((profile as Record<string,unknown>)?.skills as Array<{skill: string; proficiency: string}> ?? [])
-                .slice(0, 12)
-                .map((sk) => (
-                  <span key={sk.skill} className={`badge text-[11px] ${
-                    sk.proficiency === "expert" ? "badge-green" :
-                    sk.proficiency === "intermediate" ? "badge-blue" : "badge-gray"
-                  }`}>
-                    {sk.skill}
-                  </span>
-                ))}
+              {((profile as Record<string,unknown>)?.skills as Array<{skill: string; proficiency: string}> ?? []).length > 0 ? (
+                ((profile as Record<string,unknown>)?.skills as Array<{skill: string; proficiency: string}> ?? [])
+                  .slice(0, 12)
+                  .map((sk) => (
+                    <span key={sk.skill} className={`badge text-[11px] ${
+                      sk.proficiency === "expert" ? "badge-green" :
+                      sk.proficiency === "intermediate" ? "badge-blue" : "badge-gray"
+                    }`}>
+                      {sk.skill}
+                    </span>
+                  ))
+              ) : (
+                <span className="text-white/30 text-sm">—</span>
+              )}
             </div>
           </motion.div>
         </div>
@@ -404,6 +463,55 @@ export default function StudentDashboard() {
             ))}
           </div>
         </div>
+        {/* ── Edit Profile Modal ────────────────────────────────────────── */}
+        {isEditModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-[#0B0C10] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
+            >
+              <div className="p-4 border-b border-white/5 flex justify-between items-center">
+                <h3 className="text-white font-semibold">Edit Profile</h3>
+                <button onClick={() => setIsEditModalOpen(false)} className="text-white/40 hover:text-white">
+                  <X size={16} />
+                </button>
+              </div>
+              <form onSubmit={handleUpdateProfile} className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-white/40 text-[10px] uppercase mb-1">CGPA</label>
+                    <input type="number" step="0.01" value={editForm.cgpa} onChange={e => setEditForm({...editForm, cgpa: e.target.value})} className="w-full bg-white/[0.02] border border-white/10 rounded p-2 text-sm text-white focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-white/40 text-[10px] uppercase mb-1">Branch</label>
+                    <input type="text" value={editForm.branch} onChange={e => setEditForm({...editForm, branch: e.target.value})} className="w-full bg-white/[0.02] border border-white/10 rounded p-2 text-sm text-white focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-white/40 text-[10px] uppercase mb-1">Batch</label>
+                    <input type="number" value={editForm.batch} onChange={e => setEditForm({...editForm, batch: e.target.value})} className="w-full bg-white/[0.02] border border-white/10 rounded p-2 text-sm text-white focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-white/40 text-[10px] uppercase mb-1">Active Backlogs</label>
+                    <input type="number" value={editForm.backlogs_active} onChange={e => setEditForm({...editForm, backlogs_active: e.target.value})} className="w-full bg-white/[0.02] border border-white/10 rounded p-2 text-sm text-white focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-white/40 text-[10px] uppercase mb-1">Attendance %</label>
+                    <input type="number" step="0.1" value={editForm.attendance_pct} onChange={e => setEditForm({...editForm, attendance_pct: e.target.value})} className="w-full bg-white/[0.02] border border-white/10 rounded p-2 text-sm text-white focus:border-blue-500 outline-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-white/40 text-[10px] uppercase mb-1">Skills (comma separated)</label>
+                  <textarea value={editForm.skillsText} onChange={e => setEditForm({...editForm, skillsText: e.target.value})} className="w-full bg-white/[0.02] border border-white/10 rounded p-2 text-sm text-white focus:border-blue-500 outline-none h-20 resize-none" placeholder="Python, React, Docker..." />
+                </div>
+                <div className="flex justify-end gap-3 pt-2">
+                  <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-white/50 hover:text-white text-sm">Cancel</button>
+                  <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-medium transition-colors">Save Changes</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
 
       </main>
     </div>

@@ -428,3 +428,35 @@ async def get_drive_events(
         }
         for e in events
     ]
+
+
+@router.patch("/{drive_id}/archive")
+async def archive_drive(
+    drive_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Soft-delete: mark a drive as cancelled so it disappears from active view."""
+    result = await db.execute(select(PlacementDrive).where(PlacementDrive.id == drive_id))
+    drive = result.scalar_one_or_none()
+    if not drive:
+        raise HTTPException(status_code=404, detail="Drive not found")
+    drive.status = DriveStatus.CANCELLED
+    await db.commit()
+    return {"message": "Drive archived", "id": drive_id}
+
+
+@router.patch("/{drive_id}/restore")
+async def restore_drive(
+    drive_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Restore a cancelled/archived drive back to draft status."""
+    result = await db.execute(select(PlacementDrive).where(PlacementDrive.id == drive_id))
+    drive = result.scalar_one_or_none()
+    if not drive:
+        raise HTTPException(status_code=404, detail="Drive not found")
+    drive.status = DriveStatus.DRAFT
+    await db.commit()
+    return {"message": "Drive restored to draft", "id": drive_id}

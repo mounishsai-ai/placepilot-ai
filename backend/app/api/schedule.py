@@ -13,13 +13,22 @@ from app.database import get_db
 from app.models import (
     InterviewRound, InterviewSlot, Room, PanelMember,
     PanelAvailability, PlacementDrive, RoundType, UserRole, AgentEvent,
-    DriveStatus, MatchScore, User,
+    DriveStatus, MatchScore, User, SlotStatus,
 )
 from app.api.auth import get_current_user, require_role
 from app.api.websocket import emit_agent_event
 from app.agents.scheduler_agent import allocate_slots, detect_all_conflicts
 
 router = APIRouter()
+
+
+def _as_naive(dt: datetime) -> datetime:
+    """Postgres stores TIMESTAMP WITHOUT TIME ZONE. asyncpg crashes if we pass
+    a timezone-aware value (e.g. the trailing Z from browser Date.toISOString()).
+    Strip tz so the clock time is preserved."""
+    if dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
 
 
 class CreateRoundRequest(BaseModel):
@@ -49,8 +58,8 @@ async def create_round(
         drive_id=body.drive_id,
         round_no=body.round_no,
         round_type=body.round_type,
-        start_datetime=body.start_datetime,
-        end_datetime=body.end_datetime,
+        start_datetime=_as_naive(body.start_datetime),
+        end_datetime=_as_naive(body.end_datetime),
         mode=body.mode,
         venue=body.venue,
         meet_link=body.meet_link,
@@ -84,6 +93,11 @@ async def auto_schedule_round(
         .where(MatchScore.drive_id == round_.drive_id, MatchScore.shortlisted == True)
     )
     student_ids = [row[0] for row in matches_result.all()]
+    if not student_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No shortlisted students for this drive. Approve a shortlist first, then auto-schedule.",
+        )
 
     # Get panels and rooms
     panels_result = await db.execute(select(PanelMember))
@@ -94,9 +108,9 @@ async def auto_schedule_round(
     round_info = {
         "id": round_.id,
         "round_no": round_.round_no,
-        "round_type": round_.round_type.value,
-        "start_datetime": round_.start_datetime,
-        "end_datetime": round_.end_datetime,
+        "round_type": round_.round_type.value if hasattr(round_.round_type, "value") else round_.round_type,
+        "start_datetime": _as_naive(round_.start_datetime) if round_.start_datetime else None,
+        "end_datetime": _as_naive(round_.end_datetime) if round_.end_datetime else None,
         "slot_duration_min": round_.slot_duration_min,
         "mode": round_.mode,
     }
@@ -112,7 +126,7 @@ async def auto_schedule_round(
             room_id=slot_data.get("room_id"),
             slot_start=slot_data["slot_start"],
             slot_end=slot_data["slot_end"],
-            status="scheduled",
+            status=SlotStatus.SCHEDULED,
         )
         db.add(slot)
 
@@ -179,7 +193,7 @@ async def list_all_slots(
             selectinload(InterviewSlot.student),
             selectinload(InterviewSlot.panel_member),
             selectinload(InterviewSlot.room),
-            selectinload(InterviewSlot.round),
+            selectinload(InterviewSlot.round).selectinload(InterviewRound.drive).selectinload(PlacementDrive.company),
         )
         .order_by(InterviewSlot.slot_start.desc())
         .limit(200)
@@ -191,6 +205,11 @@ async def list_all_slots(
     return [
         {
             "id": s.id,
+            "drive_id": s.round.drive_id if s.round else None,
+            "drive_title": (
+                f"{s.round.drive.title} — {s.round.drive.company.name if s.round.drive.company else 'Unknown'}"
+                if s.round and s.round.drive else None
+            ),
             "student_name": s.student.name if s.student else None,
             "student_roll": s.student.roll_no if s.student else None,
             "round_type": s.round.round_type.value if s.round else None,

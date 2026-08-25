@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Briefcase, Play, CheckCircle, Clock, AlertTriangle,
   ChevronDown, ChevronUp, Users, Star, X, Check,
-  Building2, Calendar, TrendingUp, Zap,
+  Building2, Calendar, TrendingUp, Zap, Search,
 } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
@@ -90,13 +90,28 @@ const PIPELINE_STEPS = [
   { key: "completed",           label: "Completed",       icon: TrendingUp },
 ];
 
-const STEP_ORDER = PIPELINE_STEPS.map((s) => s.key);
+const MASTER_ORDER = [
+  "draft",
+  "jd_analyzed",
+  "eligibility_checked",
+  "matched",
+  "shortlist_pending",
+  "shortlist_approved",
+  "schedule_pending",
+  "scheduled",
+  "ongoing",
+  "completed",
+];
 
 function stepStatus(driveStatus: string, stepKey: string): "done" | "active" | "pending" {
-  const di = STEP_ORDER.indexOf(driveStatus);
-  const si = STEP_ORDER.indexOf(stepKey);
+  const di = Math.max(0, MASTER_ORDER.indexOf(driveStatus));
+  const si = Math.max(0, MASTER_ORDER.indexOf(stepKey));
+  
   if (si < di) return "done";
   if (si === di) return "active";
+  
+  // If drive is in an intermediate state (e.g. schedule_pending), 
+  // the next visual step (e.g. scheduled) should show as pending (or active if you prefer).
   return "pending";
 }
 
@@ -157,6 +172,16 @@ function ShortlistModal({
   );
   const [approving, setApproving] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredCandidates = candidates.filter((c) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (c.name || "").toLowerCase().includes(q) ||
+      (c.roll_no || "").toLowerCase().includes(q)
+    );
+  });
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -188,7 +213,7 @@ function ShortlistModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="glass-card w-full max-w-3xl max-h-[85vh] flex flex-col mx-4"
+        className="glass-card w-full max-w-3xl h-[85vh] flex flex-col mx-4"
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
@@ -210,9 +235,21 @@ function ShortlistModal({
           </p>
         </div>
 
+        {/* Search Bar */}
+        <div className="relative mb-4 px-1">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" />
+          <input
+            type="text"
+            placeholder="Search by name or roll number..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white/[0.03] border border-white/10 rounded-lg py-2 pl-9 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.05] transition-all"
+          />
+        </div>
+
         {/* Candidate list */}
         <div className="overflow-y-auto flex-1 space-y-2 pr-1">
-          {candidates.map((c) => (
+          {filteredCandidates.map((c) => (
             <div
               key={c.student_id}
               className={`rounded-xl border transition-all ${
@@ -527,6 +564,7 @@ function DriveCard({
   onCreateRound,
   onConfirmSchedule,
   onViewSchedule,
+  onArchive,
   liveEvents,
 }: {
   drive: Drive;
@@ -534,7 +572,8 @@ function DriveCard({
   onReviewShortlist: (id: string) => void;
   onCreateRound: (id: string) => void;
   onConfirmSchedule: (id: string) => void;
-  onViewSchedule: () => void;
+  onViewSchedule: (id: string) => void;
+  onArchive: (id: string, title: string) => void;
   liveEvents: AgentEvent[];
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -653,11 +692,21 @@ function DriveCard({
           )}
           {(drive.status === "scheduled" || drive.status === "ongoing") && (
             <button
-              onClick={() => onViewSchedule()}
+              onClick={() => onViewSchedule(drive.id)}
               className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 !bg-emerald-500/20 !border-emerald-500/40 hover:!bg-emerald-500/30"
             >
               <CheckCircle size={13} className="text-emerald-400" />
               <span className="text-emerald-300">View Schedule</span>
+            </button>
+          )}
+          {/* Archive button — available for draft and completed drives */}
+          {(drive.status === "draft" || drive.status === "completed" || drive.status === "cancelled") && (
+            <button
+              onClick={() => onArchive(drive.id, drive.title)}
+              className="text-white/20 hover:text-rose-400 transition-colors p-1.5 rounded-lg hover:bg-rose-500/10"
+              title="Archive drive"
+            >
+              <X size={14} />
             </button>
           )}
           <button
@@ -740,7 +789,6 @@ export default function DrivesPage() {
   const router = useRouter();
   const [drives, setDrives] = useState<Drive[]>([]);
   const [loading, setLoading] = useState(true);
-  const [runningId, setRunningId] = useState<string | null>(null);
   const [shortlistDriveId, setShortlistDriveId] = useState<string | null>(null);
   const [shortlistCandidates, setShortlistCandidates] = useState<ShortlistCandidate[]>([]);
   const [scheduleRoundDriveId, setScheduleRoundDriveId] = useState<string | null>(null);
@@ -783,20 +831,29 @@ export default function DrivesPage() {
   }, [agentEvents[0]]);
 
   const handleRunPipeline = async (id: string) => {
-    setRunningId(id);
     try {
       await drivesAPI.runPipeline(id);
       toast.success("🚀 Pipeline started! Watch agent events below...", { duration: 4000 });
-      // Refresh after a moment so status updates
       setTimeout(fetchDrives, 2000);
     } catch (err: unknown) {
       const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
       toast.error(msg ?? "Failed to start pipeline");
-    } finally {
-      setRunningId(null);
     }
   };
 
+  const handleArchive = async (id: string, title: string) => {
+    if (!window.confirm(`Archive "${title}"? You can restore it later from the Archives tab.`)) return;
+    try {
+      await drivesAPI.archive(id);
+      toast.success(`"${title}" archived`);
+      fetchDrives();
+    } catch (err: unknown) {
+      const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
+      toast.error(msg ?? "Failed to archive drive");
+    }
+  };
+
+  const activeDrives   = drives.filter((d) => d.status !== "cancelled");
   const handleReviewShortlist = async (id: string) => {
     try {
       const res = await drivesAPI.getShortlist(id);
@@ -818,11 +875,12 @@ export default function DrivesPage() {
     }
   };
 
+
   const statsBar = {
-    total: drives.length,
-    active: drives.filter((d) => ["jd_analyzed", "matched", "eligibility_checked", "ongoing"].includes(d.status)).length,
-    pending: drives.filter((d) => ["shortlist_pending", "schedule_pending"].includes(d.status)).length,
-    completed: drives.filter((d) => d.status === "completed").length,
+    total:     activeDrives.length,
+    active:    activeDrives.filter((d) => ["jd_analyzed", "matched", "eligibility_checked", "ongoing"].includes(d.status)).length,
+    pending:   activeDrives.filter((d) => ["shortlist_pending", "schedule_pending"].includes(d.status)).length,
+    completed: activeDrives.filter((d) => d.status === "completed").length,
   };
 
   return (
@@ -842,10 +900,10 @@ export default function DrivesPage() {
           {/* Stats bar */}
           <div className="grid grid-cols-4 gap-4">
             {[
-              { label: "Total Drives",   value: statsBar.total,     color: "text-white" },
-              { label: "Active",         value: statsBar.active,    color: "text-blue-400" },
-              { label: "Needs Review",   value: statsBar.pending,   color: "text-amber-400" },
-              { label: "Completed",      value: statsBar.completed, color: "text-emerald-400" },
+              { label: "Total Drives", value: statsBar.total,     color: "text-white" },
+              { label: "Active",       value: statsBar.active,    color: "text-blue-400" },
+              { label: "Needs Review", value: statsBar.pending,   color: "text-amber-400" },
+              { label: "Completed",    value: statsBar.completed, color: "text-emerald-400" },
             ].map((stat) => (
               <div key={stat.label} className="glass-card text-center py-4">
                 <div className={`text-3xl font-bold ${stat.color}`}>{stat.value}</div>
@@ -861,14 +919,14 @@ export default function DrivesPage() {
                 <div key={i} className="glass-card h-32 animate-pulse" />
               ))}
             </div>
-          ) : drives.length === 0 ? (
+          ) : activeDrives.length === 0 ? (
             <div className="glass-card text-center py-16">
               <Briefcase size={40} className="text-white/10 mx-auto mb-3" />
               <p className="text-white/40">No drives yet</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {drives.map((drive) => (
+              {activeDrives.map((drive) => (
                 <DriveCard
                   key={drive.id}
                   drive={drive}
@@ -876,7 +934,8 @@ export default function DrivesPage() {
                   onReviewShortlist={handleReviewShortlist}
                   onCreateRound={(id) => setScheduleRoundDriveId(id)}
                   onConfirmSchedule={handleConfirmSchedule}
-                  onViewSchedule={() => router.push("/tpo/schedule")}
+                  onViewSchedule={(id) => router.push(`/tpo/schedule?drive=${id}`)}
+                  onArchive={handleArchive}
                   liveEvents={agentEvents.filter((e) => e.drive_id === drive.id)}
                 />
               ))}

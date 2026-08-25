@@ -17,6 +17,10 @@
 - **Goal:** Win a 7-day hackathon where judges click through a *production-deployed* app.
 - **Communication style:** Direct, no fluff. They want to understand, not just be told.
 
+### 💸 THE $300 GCP "WOW FACTOR" DIRECTIVE
+We have a **$300 Google Cloud budget** that must be spent within 90 days. 
+**Directive to Agents: BE LIMITLESS.** If you can think of exceptional, high-end features that will create a massive "WOW factor" for the judges and help us win, **build them**. Do not hesitate to use the most powerful Gemini models (e.g., Gemini Pro), expensive APIs, or heavy computing tasks. The goal is to win the hackathon by having the most impressive, premium-feeling app possible.
+
 ### ⚠️ THIS IS NOT A TYPICAL HACKATHON — Production deployment is REQUIRED
 
 > Most hackathons accept a working demo on localhost. **This one does not.**
@@ -565,12 +569,7 @@ has been started. Specifically, as of this update:
   how long a judge will wait and what to say while they're waiting.
 - **Day 7:** Buffer. Do not start anything new.
 
-**On "extra features": still don't.** Every fabricated surface identified in the
-original audit is now real. The temptation now is to add polish or scope — resist
-it until Day 3's build/deploy confirmation is done. §4.1 (HITL gate #2) and §4.4
-(notification templates) are already done as of this pass; §4.2 and §4.3 below are
-the only two additions worth making, because they're nearly free and they directly
-serve the problem statement's own objective sentence.
+**On "extra features" & WOW FACTOR:** WE HAVE $300 IN GOOGLE CLOUD CREDITS to spend in 90 days. We need to spend it to win. **BE LIMITLESS.** If there's an exceptional feature that creates a "wow" factor for the judges, propose it and build it. Use top-tier models, advanced APIs, audio/video processing, real-time analytics, or anything else that makes the app look incredibly premium and advanced. If it helps us win, do it.
 
 ---
 
@@ -628,15 +627,15 @@ continuous autonomous graph.
 
 | Decision | Choice |
 |---|---|
-| LLM | Gemini `gemini-3.6-flash` (JD parse) / `gemini-3.5-flash-lite` (rest) |
+| LLM | **Top-end Gemini models** (e.g., `gemini-1.5-pro` or `gemini-3.1-pro`) — we have $300 in GCP credits (valid for 90 days), use the best! |
 | Embeddings | `gemini-embedding-001` **via direct REST** (not langchain — see §3.2) |
 | Agent Framework | LangGraph (stateful, HITL) |
 | Scheduling | FCFS + conflict detection |
 | Auth | JWT, 4 roles: tpo/student/company/panel |
-| Primary DB | PostgreSQL 16 (Docker locally, Railway in prod) |
+| Primary DB | PostgreSQL 16 (Docker locally, Railway/GCP in prod) |
 | Frontend | Next.js 14 App Router + TypeScript + Tailwind, glassmorphism dark theme |
 | Config format | `next.config.mjs` (NOT `.ts`) |
-| Deployment | Railway (backend) + Vercel (frontend) |
+| Deployment | **Google Cloud Platform (GCP)** or paid tiers — no more free tier limits. $300 budget to spend in 90 days. |
 
 ## 12. ⚠️ CRITICAL FIXES ALREADY APPLIED — DO NOT UNDO
 
@@ -684,10 +683,7 @@ running DB (the pattern used for `resume_uploaded_at` and the `Company.user_id` 
   {"node": "20.x"}` pin in `package.json` should make Vercel pick a compatible
   Node version, but that has not been empirically confirmed.
 - Then set Railway `FRONTEND_URL` to the real Vercel URL (CORS depends on it).
-- **Known gap:** Railway free tier has ephemeral disk — `/tmp` uploads and ChromaDB are
-  wiped on restart. Acceptable for a demo; don't be surprised. Note this now also
-  affects résumé downloads specifically (§3.6's new authenticated endpoint reads
-  from the same `UPLOAD_DIR` on disk) — not a new gap, just now more visible.
+- **Hosting note:** We now have **$300 in Google Cloud credits** (expires in 90 days). We are no longer restricted to Railway's free tier with ephemeral disks. We can deploy on GCP (e.g., Cloud Run, Cloud SQL, Cloud Storage) or use paid services to ensure persistent storage for uploads and ChromaDB, and handle heavy builds without timeouts.
 
 ---
 
