@@ -1,12 +1,13 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
-import { Calendar, Clock, Users, CheckCircle, AlertTriangle, Plus } from "lucide-react";
+import { Calendar, Clock, Users, CheckCircle, AlertTriangle, Plus, Building2, ChevronDown, ChevronUp, Archive } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
 import { scheduleAPI, drivesAPI } from "@/lib/api";
+import { useSearchParams } from "next/navigation";
 
 interface Slot {
   id: string;
@@ -19,6 +20,8 @@ interface Slot {
   result: string | null;
   panel: string | null;
   venue: string | null;
+  drive_id?: string;
+  drive_title?: string;
 }
 
 interface Drive {
@@ -27,24 +30,114 @@ interface Drive {
   company: string | null;
 }
 
+interface DriveGroup {
+  driveId: string;
+  driveTitle: string;
+  slots: Slot[];
+}
+
 function toLocalInputValue(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** No Z suffix — Postgres needs TIMESTAMP WITHOUT TIME ZONE */
+function toNaiveISO(v: string): string {
+  return v.length === 16 ? v + ":00" : v;
+}
+
+function DriveScheduleCard({ group, highlight }: { group: DriveGroup; highlight: boolean }) {
+  const [open, setOpen] = useState(true);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlight && ref.current) ref.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [highlight]);
+  const upcoming  = group.slots.filter((s) => s.status !== "completed").length;
+  const completed = group.slots.filter((s) => s.status === "completed").length;
+  const selected  = group.slots.filter((s) => s.result === "selected").length;
+  return (
+    <div ref={ref} className={`glass-card overflow-hidden p-0 ${highlight ? "ring-1 ring-blue-400/40" : ""}`}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-6 py-4 border-b border-white/[0.06] flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex items-center gap-3 text-left">
+          <Building2 size={15} className="text-blue-400 flex-shrink-0" />
+          <div>
+            <div className="text-white font-semibold text-sm">{group.driveTitle}</div>
+            <div className="text-white/35 text-xs mt-0.5">
+              {group.slots.length} slots &middot; {upcoming} upcoming &middot; {completed} done &middot; {selected} selected
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="badge badge-blue text-[10px]">{group.slots.length} slots</span>
+          {open ? <ChevronUp size={16} className="text-white/30" /> : <ChevronDown size={16} className="text-white/30" />}
+        </div>
+      </button>
+      {open && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/[0.06]">
+              {["Time", "Student", "Roll No", "Round", "Panel", "Venue", "Status"].map((h) => (
+                <th key={h} className="text-left text-white/35 font-medium text-xs uppercase tracking-wider px-5 py-3">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {group.slots.map((slot, i) => (
+              <motion.tr
+                key={slot.id}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: Math.min(i, 20) * 0.03 }}
+                className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+              >
+                <td className="px-5 py-3">
+                  <div className="text-white font-medium">{format(new Date(slot.slot_start), "hh:mm a")}</div>
+                  <div className="text-white/30 text-[11px]">{format(new Date(slot.slot_start), "d MMM yyyy")}</div>
+                </td>
+                <td className="px-5 py-3 text-white">{slot.student_name ?? "-"}</td>
+                <td className="px-5 py-3 text-white/50 font-mono text-xs">{slot.student_roll ?? "-"}</td>
+                <td className="px-5 py-3"><span className="badge badge-blue text-[10px] capitalize">{slot.round_type ?? "-"}</span></td>
+                <td className="px-5 py-3 text-white/50 text-xs">{slot.panel ?? "-"}</td>
+                <td className="px-5 py-3 text-white/50 text-xs">{slot.venue ?? "-"}</td>
+                <td className="px-5 py-3">
+                  {slot.status === "completed" ? (
+                    <span className={`badge text-[10px] ${slot.result === "selected" ? "badge-green" : "badge-rose"}`}>
+                      {slot.result === "selected" ? "Selected" : "Rejected"}
+                    </span>
+                  ) : (
+                    <span className="badge badge-amber text-[10px]">Upcoming</span>
+                  )}
+                </td>
+              </motion.tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export default function SchedulePage() {
-  const [slots, setSlots] = useState<Slot[]>([]);
+  const searchParams = useSearchParams();
+  const highlightDriveId = searchParams.get("drive") ?? "";
+
+  const [slots, setSlots]               = useState<Slot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(true);
-  const [drives, setDrives] = useState<Drive[]>([]);
+  const [drives, setDrives]             = useState<Drive[]>([]);
+  const [filterDriveId, setFilterDriveId] = useState(highlightDriveId);
+  const [scheduleTab, setScheduleTab]     = useState<"active" | "archived">("active");
   const [showCreateRound, setShowCreateRound] = useState(false);
-  const [driveId, setDriveId] = useState("");
-  const [roundType, setRoundType] = useState("technical");
+  const [driveId, setDriveId]           = useState(highlightDriveId);
+  const [roundType, setRoundType]       = useState("technical");
   const [slotDuration, setSlotDuration] = useState("30");
   const now = new Date();
-  const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const inEightHours = new Date(now.getTime() + 8 * 3600 * 1000);
   const [startDatetime, setStartDatetime] = useState(toLocalInputValue(now));
-  const [endDatetime, setEndDatetime] = useState(toLocalInputValue(inTwoHours));
-  const [creating, setCreating] = useState(false);
+  const [endDatetime, setEndDatetime]     = useState(toLocalInputValue(inEightHours));
+  const [creating, setCreating]         = useState(false);
 
   const fetchSlots = useCallback(async () => {
     try {
@@ -61,15 +154,45 @@ export default function SchedulePage() {
     fetchSlots();
     drivesAPI.list().then((res) => {
       setDrives(res.data);
-      if (res.data.length > 0) setDriveId(res.data[0].id);
+      if (highlightDriveId) {
+        setDriveId(highlightDriveId);
+      } else if (res.data.length > 0) {
+        setDriveId(res.data[0].id);
+      }
     }).catch(() => {});
-  }, [fetchSlots]);
+  }, [fetchSlots, highlightDriveId]);
+
+  // Group all slots by drive
+  const allGroups: DriveGroup[] = (() => {
+    const map = new Map<string, DriveGroup>();
+    for (const slot of slots) {
+      const key = slot.drive_id ?? "unknown";
+      if (!map.has(key)) map.set(key, { driveId: key, driveTitle: slot.drive_title ?? "Unknown Drive", slots: [] });
+      map.get(key)!.slots.push(slot);
+    }
+    for (const g of map.values())
+      g.slots.sort((a, b) => new Date(a.slot_start).getTime() - new Date(b.slot_start).getTime());
+    const groups = Array.from(map.values());
+    groups.sort((a, b) => (a.driveId === highlightDriveId ? -1 : b.driveId === highlightDriveId ? 1 : 0));
+    return groups;
+  })();
+
+  const visibleGroups = (() => {
+    // Separate active (upcoming) vs completed slots within each group
+    const active   = allGroups.map((g) => ({ ...g, slots: g.slots.filter((s) => s.status !== "completed") })).filter((g) => g.slots.length > 0);
+    const archived = allGroups.map((g) => ({ ...g, slots: g.slots.filter((s) => s.status === "completed") })).filter((g) => g.slots.length > 0);
+    const base = scheduleTab === "archived" ? archived : active;
+    return filterDriveId ? base.filter((g) => g.driveId === filterDriveId) : base;
+  })();
+
+  const upcomingCount  = allGroups.reduce((n, g) => n + g.slots.filter((s) => s.status !== "completed").length, 0);
+  const completedCount = allGroups.reduce((n, g) => n + g.slots.filter((s) => s.status === "completed").length, 0);
 
   const stats = {
     total: slots.length,
     completed: slots.filter((s) => s.status === "completed").length,
     selected: slots.filter((s) => s.result === "selected").length,
-    upcoming: slots.filter((s) => s.status === "scheduled").length,
+    upcoming: slots.filter((s) => s.status !== "completed").length,
   };
 
   const handleCreateRound = async () => {
@@ -85,18 +208,18 @@ export default function SchedulePage() {
         round_type: roundType,
         slot_duration_min: parseInt(slotDuration),
         mode: "offline",
-        start_datetime: startDatetime,
-        end_datetime: endDatetime,
+        start_datetime: toNaiveISO(startDatetime),
+        end_datetime: toNaiveISO(endDatetime),
       });
       toast.success("Round created! Running auto-schedule...");
       const scheduleRes = await scheduleAPI.autoSchedule(res.data.id);
       const { scheduled, conflicts } = scheduleRes.data;
       if (scheduled > 0) {
-        toast.success(`✅ ${scheduled} interview slots auto-allocated via FCFS!`);
+        toast.success(`${scheduled} interview slots auto-allocated via FCFS!`);
       } else {
         toast.error(
           conflicts?.length > 0
-            ? `No slots allocated — ${conflicts.length} conflicts. Check the shortlist and time window.`
+            ? `No slots allocated — ${conflicts.length} conflicts.`
             : "No slots allocated — does this drive have an approved shortlist yet?"
         );
       }
@@ -117,7 +240,6 @@ export default function SchedulePage() {
         <TopBar title="Interview Schedule" subtitle="FCFS auto-allocation · manage interview rounds" />
 
         <main className="p-8 space-y-6">
-          {/* Stats */}
           <div className="grid grid-cols-4 gap-4">
             {[
               { label: "Total Slots",  value: stats.total,    icon: Calendar,     color: "text-white" },
@@ -137,21 +259,62 @@ export default function SchedulePage() {
             ))}
           </div>
 
-          {/* Action bar */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <button
               onClick={() => setShowCreateRound(!showCreateRound)}
               className="btn-primary flex items-center gap-2"
             >
               <Plus size={15} /> Create Interview Round
             </button>
-            <div className="ml-auto text-white/30 text-sm flex items-center gap-2">
-              <AlertTriangle size={14} className="text-amber-400" />
-              Slots auto-allocated using First-Come-First-Serve algorithm
+          </div>
+
+          {/* Tab bar */}
+          <div className="flex items-center gap-1 border-b border-white/[0.06]">
+            <button
+              onClick={() => setScheduleTab("active")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors border-b-2 ${
+                scheduleTab === "active"
+                  ? "border-blue-400 text-blue-300 bg-blue-500/[0.06]"
+                  : "border-transparent text-white/40 hover:text-white/70"
+              }`}
+            >
+              <Clock size={14} /> Active
+              <span className="badge badge-blue text-[10px] ml-1">{upcomingCount}</span>
+            </button>
+            <button
+              onClick={() => setScheduleTab("archived")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors border-b-2 ${
+                scheduleTab === "archived"
+                  ? "border-emerald-400 text-emerald-300 bg-emerald-500/[0.06]"
+                  : "border-transparent text-white/40 hover:text-white/70"
+              }`}
+            >
+              <Archive size={14} /> Completed
+              {completedCount > 0 && (
+                <span className="badge badge-green text-[10px] ml-1">{completedCount}</span>
+              )}
+            </button>
+            {/* Drive filter */}
+            <div className="flex items-center gap-2 ml-auto">
+              <Building2 size={14} className="text-white/30" />
+              <select
+                value={filterDriveId}
+                onChange={(e) => setFilterDriveId(e.target.value)}
+                className="bg-white/[0.06] border border-white/[0.1] text-white text-xs rounded-lg px-3 py-1.5 outline-none"
+              >
+                <option value="" className="bg-gray-900">All Drives</option>
+                {allGroups.map((g) => (
+                  <option key={g.driveId} value={g.driveId} className="bg-gray-900">{g.driveTitle}</option>
+                ))}
+              </select>
+              {filterDriveId && (
+                <button onClick={() => setFilterDriveId("")} className="text-white/30 hover:text-white/60 text-xs">
+                  Clear
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Create Round panel */}
           {showCreateRound && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
@@ -217,12 +380,6 @@ export default function SchedulePage() {
                   />
                 </div>
               </div>
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3 mb-4">
-                <p className="text-blue-300 text-sm">
-                  🤖 <strong>FCFS Auto-Schedule:</strong> Slots will be automatically allocated to shortlisted
-                  students in rank order, with conflict detection for panel members and rooms.
-                </p>
-              </div>
               <div className="flex gap-3 justify-end">
                 <button onClick={() => setShowCreateRound(false)} className="btn-ghost">Cancel</button>
                 <button onClick={handleCreateRound} disabled={creating} className="btn-primary flex items-center gap-2">
@@ -235,66 +392,25 @@ export default function SchedulePage() {
             </motion.div>
           )}
 
-          {/* Schedule table */}
-          <div className="glass-card overflow-hidden p-0">
-            <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
-              <h3 className="text-white font-semibold">Interview Slots — All Drives</h3>
-              <span className="text-white/30 text-sm">Most recent 200</span>
+          {loadingSlots ? (
+            <div className="space-y-4">
+              {[1, 2].map((i) => <div key={i} className="glass-card h-32 animate-pulse" />)}
             </div>
-            {loadingSlots ? (
-              <div className="p-12 text-center text-white/30 text-sm">Loading slots…</div>
-            ) : slots.length === 0 ? (
-              <div className="p-12 text-center text-white/30 text-sm">
-                No interview slots yet. Create a round above to auto-schedule shortlisted candidates.
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-white/[0.06]">
-                    {["Time", "Student", "Roll No", "Round", "Panel", "Venue", "Status"].map((h) => (
-                      <th key={h} className="text-left text-white/35 font-medium text-xs uppercase tracking-wider px-5 py-3">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {slots.map((slot, i) => (
-                    <motion.tr
-                      key={slot.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: Math.min(i, 20) * 0.03 }}
-                      className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
-                    >
-                      <td className="px-5 py-3">
-                        <div className="text-white font-medium">{format(new Date(slot.slot_start), "hh:mm a")}</div>
-                        <div className="text-white/30 text-[11px]">{format(new Date(slot.slot_start), "d MMM yyyy")}</div>
-                      </td>
-                      <td className="px-5 py-3 text-white">{slot.student_name ?? "—"}</td>
-                      <td className="px-5 py-3 text-white/50 font-mono text-xs">{slot.student_roll ?? "—"}</td>
-                      <td className="px-5 py-3">
-                        <span className="badge badge-blue text-[10px] capitalize">{slot.round_type ?? "—"}</span>
-                      </td>
-                      <td className="px-5 py-3 text-white/50 text-xs">{slot.panel ?? "—"}</td>
-                      <td className="px-5 py-3 text-white/50 text-xs">{slot.venue ?? "—"}</td>
-                      <td className="px-5 py-3">
-                        {slot.status === "completed" ? (
-                          <span className={`badge text-[10px] ${
-                            slot.result === "selected" ? "badge-green" : "badge-rose"
-                          }`}>
-                            {slot.result === "selected" ? "✓ Selected" : "✗ Rejected"}
-                          </span>
-                        ) : (
-                          <span className="badge badge-amber text-[10px]">Scheduled</span>
-                        )}
-                      </td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+          ) : visibleGroups.length === 0 ? (
+            <div className="glass-card text-center py-16 text-white/30 text-sm">
+              No interview slots yet. Create a round above to auto-schedule shortlisted candidates.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {visibleGroups.map((group) => (
+                <DriveScheduleCard
+                  key={group.driveId}
+                  group={group}
+                  highlight={group.driveId === highlightDriveId}
+                />
+              ))}
+            </div>
+          )}
         </main>
       </div>
     </div>

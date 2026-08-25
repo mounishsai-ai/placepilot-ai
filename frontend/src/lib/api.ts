@@ -52,6 +52,8 @@ export const drivesAPI = {
   approveSchedule: (id: string, data: object) =>
     api.patch(`/api/drives/${id}/schedule/approve`, data),
   getEvents: (id: string) => api.get(`/api/drives/${id}/events`),
+  archive: (id: string) => api.patch(`/api/drives/${id}/archive`),
+  restore: (id: string) => api.patch(`/api/drives/${id}/restore`),
 };
 
 // ─── Students ─────────────────────────────────────────────────────────────
@@ -65,6 +67,7 @@ export const studentsAPI = {
   getMatches: (id: string) => api.get(`/api/students/${id}/matches`),
   uploadResume: (form: FormData) =>
     api.post("/api/students/me/resume", form),
+  updateMe: (data: object) => api.put("/api/students/me", data),
   getSkillAdvice: () => api.get("/api/students/me/skill-advice"),
 };
 

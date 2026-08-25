@@ -206,68 +206,6 @@ export default function TPODashboard() {
             />
           </div>
 
-          {/* ── Drives Table — full width ───────────────────────────────── */}
-          <div className="glass-card">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-white font-semibold text-base">Placement Drives</h2>
-              <span className="badge-blue badge">{drives.length} drives</span>
-            </div>
-
-            {loading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-14 rounded-xl bg-white/[0.04] animate-pulse" />
-                ))}
-              </div>
-            ) : (
-              <table className="glass-table">
-                <thead>
-                  <tr>
-                    <th>Company</th>
-                    <th>Role</th>
-                    <th>Package</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {drives.slice(0, 10).map((drive) => (
-                    <tr key={drive.id as string}>
-                      <td className="font-medium text-white/90">{drive.company as string}</td>
-                      <td className="text-white/60 text-xs max-w-[200px] truncate">
-                        {drive.title as string}
-                      </td>
-                      <td>
-                        <span className="text-emerald-400 font-semibold text-xs">
-                          {drive.package_lpa ? `${drive.package_lpa} LPA` : "—"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={STATUS_BADGE[drive.status as string] ?? "pipeline-step pending"}>
-                          {STATUS_LABEL[drive.status as string] ?? drive.status as string}
-                        </span>
-                      </td>
-                      <td>
-                        {(drive.status as string) === "draft" || (drive.status as string) === "jd_analyzed" ? (
-                          <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => handleRunPipeline(drive.id as string, drive.company as string)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-semibold transition-colors"
-                          >
-                            <Play size={11} fill="currentColor" />
-                            Run Pipeline
-                          </motion.button>
-                        ) : (
-                          <span className="text-white/20 text-xs">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
 
           {/* ── Pipeline Status + Agent Activity ──────────────────────── */}
           <div className="grid grid-cols-3 gap-5">
