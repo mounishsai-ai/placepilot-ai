@@ -9,52 +9,57 @@ interface MetricCardProps {
   subtitle?: string;
   icon: React.ReactNode;
   trend?: number;        // positive = up, negative = down
-  accentColor?: string;  // tailwind color name: blue, green, amber, purple
+  /** the one card carrying the agent's own headline number gets the bright fill */
+  hero?: boolean;
+  /** accepted for call-site compatibility; the card is jade regardless */
+  accentColor?: string;
   delay?: number;
 }
 
-const ACCENT = {
-  blue:   { ring: "ring-blue-500/20",   glow: "shadow-[0_0_30px_rgba(77,136,255,0.15)]",   icon: "bg-blue-500/15 text-blue-400"   },
-  green:  { ring: "ring-emerald-500/20", glow: "shadow-[0_0_30px_rgba(16,185,129,0.15)]",  icon: "bg-emerald-500/15 text-emerald-400" },
-  amber:  { ring: "ring-amber-500/20",   glow: "shadow-[0_0_30px_rgba(245,158,11,0.15)]",  icon: "bg-amber-500/15 text-amber-400"   },
-  purple: { ring: "ring-purple-500/20",  glow: "shadow-[0_0_30px_rgba(168,85,247,0.15)]",  icon: "bg-purple-500/15 text-purple-400" },
-  cyan:   { ring: "ring-cyan-500/20",    glow: "shadow-[0_0_30px_rgba(6,182,212,0.15)]",   icon: "bg-cyan-500/15 text-cyan-400"   },
-  rose:   { ring: "ring-rose-500/20",    glow: "shadow-[0_0_30px_rgba(244,63,94,0.15)]",   icon: "bg-rose-500/15 text-rose-400"   },
-};
+/* Every accent resolves to jade on the dark card — the palette says the card
+   is the agent's territory, so nothing here is blue or purple any more. Gold
+   stays reserved for the one state that means a human is needed. */
+const ICON_TINT = "rgba(52,216,154,.16)";
+const ICON_FG = "#7FE9C0";
 
 export default function MetricCard({
-  title, value, subtitle, icon, trend, accentColor = "blue", delay = 0,
+  title, value, subtitle, icon, trend, hero = false, delay = 0,
 }: MetricCardProps) {
-  const accent = ACCENT[accentColor as keyof typeof ACCENT] ?? ACCENT.blue;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay }}
-      className={clsx(
-        "metric-card ring-1",
-        accent.ring,
-        accent.glow
-      )}
+      className={clsx("metric-card", hero && "stat-hero")}
     >
       <div className="flex items-start justify-between mb-4">
-        <div className={clsx("p-3 rounded-xl", accent.icon)}>{icon}</div>
+        <div
+          className="p-3 rounded-xl"
+          style={{
+            background: hero ? "rgba(255,255,255,.18)" : ICON_TINT,
+            color: hero ? "#fff" : ICON_FG,
+          }}
+        >
+          {icon}
+        </div>
         {trend !== undefined && (
-          <span className={clsx(
-            "flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full",
-            trend >= 0
-              ? "bg-emerald-500/15 text-emerald-400"
-              : "bg-rose-500/15 text-rose-400"
-          )}>
-            {trend >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+          <span
+            className="ct-mono flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full"
+            style={{
+              background: hero ? "rgba(255,255,255,.2)" : ICON_TINT,
+              color: hero ? "#fff" : ICON_FG,
+            }}
+          >
+            {trend >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
             {Math.abs(trend)}%
           </span>
         )}
       </div>
-      <div className="stat-number text-3xl font-bold mb-1">{value}</div>
-      <div className="text-white/50 text-sm font-medium">{title}</div>
-      {subtitle && <div className="text-white/30 text-xs mt-1">{subtitle}</div>}
+      <div className="stat-number text-[29px] font-bold mb-1 text-white">{value}</div>
+      <div className="text-sm font-medium" style={{ color: "rgba(234,246,241,.62)" }}>{title}</div>
+      {subtitle && (
+        <div className="text-xs mt-1" style={{ color: "rgba(234,246,241,.4)" }}>{subtitle}</div>
+      )}
     </motion.div>
   );
 }

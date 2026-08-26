@@ -86,7 +86,11 @@ export default function LoginPage() {
               initial={{ scale: 0.8, rotate: -10 }}
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: "spring", stiffness: 200 }}
-              className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-[0_0_30px_rgba(77,136,255,0.5)]"
+              className="w-12 h-12 rounded-xl flex items-center justify-center"
+              style={{
+                background: "linear-gradient(140deg,var(--jade),#0C8F58)",
+                boxShadow: "0 4px 18px rgba(15,169,104,.4)",
+              }}
             >
               <Cpu size={22} className="text-white" />
             </motion.div>
@@ -98,7 +102,10 @@ export default function LoginPage() {
 
           <h2 className="text-white text-3xl font-bold leading-tight mb-3">
             AI-Powered<br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
+            <span
+              className="text-transparent bg-clip-text"
+              style={{ backgroundImage: "linear-gradient(96deg,var(--jade) 0%,var(--jade-mid) 55%,var(--spring) 100%)" }}
+            >
               Placement Automation
             </span>
           </h2>

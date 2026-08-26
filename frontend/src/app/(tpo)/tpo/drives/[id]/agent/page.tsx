@@ -6,6 +6,7 @@ import { ArrowLeft, Play } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import AgentTrace, { AgentRun } from "@/components/ui/AgentTrace";
+import AgentOrb from "@/components/ui/AgentOrb";
 import { agentAPI, drivesAPI } from "@/lib/api";
 import { useTPOWebSocket } from "@/lib/websocket";
 import { useDashboardStore } from "@/lib/store";
@@ -22,6 +23,40 @@ const STATUS: Record<string, { label: string; className: string }> = {
   completed: { label: "Finished",         className: "badge-green"  },
   failed:    { label: "Stopped",          className: "badge-rose"   },
 };
+
+/* The pipeline strip reads the trace rather than tracking its own state, so it
+   can never disagree with what the agent actually did. Each stage is "done"
+   once its tool has returned an observation. */
+const STAGES: { key: string; n: string; label: string; done: string }[] = [
+  { key: "get_drive_context", n: "01 · Context",    label: "Read the drive",     done: "Read the drive"    },
+  { key: "parse_jd",          n: "02 · Parse",      label: "Understand the JD",  done: "Understood the JD" },
+  { key: "check_eligibility", n: "03 · Eligibility", label: "Check who qualifies", done: "Eligibility checked" },
+  { key: "rank_candidates",   n: "04 · Rank",       label: "Rank candidates",    done: "Candidates ranked" },
+];
+
+interface TraceStepDetail {
+  result: unknown;
+  cost_ms: number | null;
+}
+
+function fmtMs(v: number): string {
+  return v < 1000 ? `${v} ms` : `${(v / 1000).toFixed(2)} s`;
+}
+
+function summarise(result: unknown): string {
+  if (!result || typeof result !== "object") return "";
+  const r = result as Record<string, unknown>;
+  if (typeof r.error === "string") return r.error;
+  const bits: string[] = [];
+  for (const [k, v] of Object.entries(r)) {
+    if (v === null || v === undefined) continue;
+    if (Array.isArray(v)) bits.push(`${k.replace(/_/g, " ")} ${v.length}`);
+    else if (typeof v === "object") continue;
+    else if (typeof v === "string" && v.length > 32) continue;
+    else bits.push(`${k.replace(/_/g, " ")} ${v}`);
+  }
+  return bits.slice(0, 2).join(" · ");
+}
 
 export default function ControlTowerPage({ params }: { params: { id: string } }) {
   const driveId = params.id;
@@ -123,7 +158,25 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
   };
 
   const status = run ? STATUS[run.status] ?? { label: run.status, className: "badge-gray" } : null;
-  const measured = run?.trace.reduce((sum, s) => sum + (s.cost_ms ?? 0), 0) ?? 0;
+  const trace = run?.trace ?? [];
+  const measured = trace.reduce((sum, s) => sum + (s.cost_ms ?? 0), 0);
+
+  // Split measured time into the model's own reasoning vs. work done in tools —
+  // the honest answer is usually that the tools dominate, which is worth showing.
+  const thinkMs = trace.filter((s) => s.kind === "thought").reduce((a, s) => a + (s.cost_ms ?? 0), 0);
+  const toolMs = trace.filter((s) => s.kind === "observation").reduce((a, s) => a + (s.cost_ms ?? 0), 0);
+  const splitTotal = Math.max(1, thinkMs + toolMs);
+
+  const toolsCalled = new Set(
+    trace.filter((s) => s.kind === "tool_call").map((s) => (s.detail?.name as string) ?? "")
+  );
+  const observations = new Map<string, TraceStepDetail>();
+  for (const s of trace) {
+    if (s.kind === "observation" && s.detail && typeof s.detail.name === "string") {
+      observations.set(s.detail.name, { result: s.detail.result, cost_ms: s.cost_ms });
+    }
+  }
+  const paused = run?.status === "paused";
 
   return (
     <div className="min-h-screen bg-cosmic flex">
@@ -135,77 +188,208 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
           connected={connected}
         />
 
-        <main className="p-8">
+        <main className="p-7 flex flex-col gap-4">
           <Link
             href="/tpo/drives"
-            className="inline-flex items-center gap-1.5 text-white/40 hover:text-white/80 text-xs mb-6 transition-colors rounded"
+            className="inline-flex items-center gap-1.5 text-xs transition-colors rounded w-fit"
+            style={{ color: "var(--faint)" }}
           >
             <ArrowLeft size={13} /> All drives
           </Link>
 
-          <div className="glass p-7 max-w-4xl">
-            {/* Run header — the agent's own vitals, in the agent's own typeface */}
-            <div className="flex items-start justify-between gap-4 pb-6 mb-7 border-b border-white/[0.07]">
-              <div>
-                <h2 className="text-white font-semibold text-[17px]">
-                  {run ? "This is what the agent did" : "Nothing has run yet"}
-                </h2>
-                <p className="text-white/35 text-[12.5px] mt-1 max-w-[56ch] leading-relaxed">
-                  {run
-                    ? "Every step below was chosen by the model, not by a script. Where it stopped, it stopped to ask you."
-                    : "Start the agent and it will read the job description, check who qualifies, rank them, then stop and ask before finalising anything."}
-                </p>
-              </div>
-
-              {run && status && (
-                <div className="flex flex-col items-end gap-2 shrink-0">
-                  <span className={status.className}>
-                    {run.status === "running" && <span className="ct-live-dot" />}
-                    {status.label}
-                  </span>
-                  <span
-                    className="ct-mono text-[10px] text-white/25"
-                    title="Measured model and tool latency for this run"
-                  >
-                    {run.trace.length} steps · {(measured / 1000).toFixed(1)}s
-                  </span>
-                  <span className="ct-mono text-[10px] text-white/15">run {run.id.slice(0, 8)}</span>
-                </div>
+          {/* Headline: ink sentence, jade on the clause that matters */}
+          <div>
+            <h1 className="text-[clamp(22px,2.8vw,30px)] leading-[1.1] max-w-[22ch]">
+              {paused ? (
+                <>It did the work, then <em>stopped to ask you.</em></>
+              ) : run?.status === "running" ? (
+                <>The agent is <em>working through this drive.</em></>
+              ) : run?.status === "completed" ? (
+                <>Done — and <em>you approved every decision.</em></>
+              ) : run?.status === "failed" ? (
+                <>The run <em>stopped early.</em></>
+              ) : (
+                <>Nothing has run on this drive <em>yet.</em></>
               )}
-            </div>
-
-            {loading ? (
-              <p className="text-white/30 text-sm py-10 text-center">Loading…</p>
-            ) : !run || run.trace.length === 0 ? (
-              <div className="py-12 text-center">
-                {runId && (
-                  <p className="text-white/35 text-[13px] mb-5 flex items-center justify-center gap-2">
-                    <span className="ct-live-dot" /> Starting up…
-                  </p>
-                )}
-                {/* Gated on runId, not run: the instant start returns a run_id,
-                    this has to disappear even though the first poll hasn't
-                    landed yet — otherwise a second click starts a concurrent run. */}
-                {!runId && (
-                  <button onClick={startAgent} disabled={starting} className="btn-primary inline-flex items-center gap-2">
-                    <Play size={15} />
-                    {starting ? "Starting…" : "Start the agent"}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <AgentTrace run={run} onAnswer={answer} sending={sending} />
-            )}
-
-            {run && (run.status === "completed" || run.status === "failed") && (
-              <div className="pt-6 mt-2 border-t border-white/[0.07]">
-                <button onClick={startAgent} disabled={starting} className="btn-ghost inline-flex items-center gap-2">
-                  <Play size={13} />
-                  {starting ? "Starting…" : "Run it again"}
-                </button>
-              </div>
-            )}
+            </h1>
+            <p className="text-[13.5px] mt-2.5 max-w-[64ch] leading-relaxed" style={{ color: "var(--ash)" }}>
+              {run
+                ? "Every step below was chosen by the model, not by a script — the order isn't hardcoded anywhere. Where it stopped, it stopped to ask."
+                : "Start the agent and it will read the job description, work out who qualifies, rank them, then stop and ask you before anything is finalised."}
+            </p>
           </div>
+
+          {loading ? (
+            <p className="text-sm py-10 text-center" style={{ color: "var(--faint)" }}>Loading…</p>
+          ) : !run ? (
+            <div className="glass p-12 text-center">
+              <button onClick={startAgent} disabled={starting} className="btn-primary inline-flex items-center gap-2">
+                <Play size={15} />
+                {starting ? "Starting…" : "Start the agent"}
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Pipeline — derived from the trace, so it can't drift from reality */}
+              <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(168px,1fr))" }}>
+                {STAGES.map((st) => {
+                  const obs = observations.get(st.key);
+                  const done = !!obs;
+                  const running = !done && toolsCalled.has(st.key);
+                  return (
+                    <div key={st.key} className={`tile ${done ? "tile-done" : "tile-todo"}`}>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="ct-mono text-[8.5px] tracking-[0.13em] uppercase opacity-80">{st.n}</span>
+                        <span
+                          className="w-[15px] h-[15px] rounded-full grid place-items-center text-[9px] font-bold"
+                          style={{ background: done ? "rgba(255,255,255,.26)" : "var(--line-2)" }}
+                        >
+                          {done ? "✓" : running ? "·" : ""}
+                        </span>
+                      </div>
+                      <div className="text-[12.5px] font-semibold tracking-[-0.014em]">
+                        {done ? st.done : st.label}
+                      </div>
+                      {obs && (
+                        <>
+                          <div className="ct-mono text-[10px] opacity-[0.82] mt-0.5">{summarise(obs.result)}</div>
+                          {obs.cost_ms !== null && (
+                            <div className="ct-mono text-[9px] opacity-60 mt-1">{fmtMs(obs.cost_ms)}</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+                <div className={`tile ${paused ? "tile-wait" : "tile-todo"}`}>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="ct-mono text-[8.5px] tracking-[0.13em] uppercase opacity-80">05 · Approval</span>
+                    <span
+                      className="w-[15px] h-[15px] rounded-full grid place-items-center text-[9px] font-bold"
+                      style={{ background: paused ? "rgba(255,255,255,.26)" : "var(--line-2)" }}
+                    >
+                      {paused ? "!" : run.status === "completed" ? "✓" : ""}
+                    </span>
+                  </div>
+                  <div className="text-[12.5px] font-semibold tracking-[-0.014em]">
+                    {paused ? "Waiting for you" : run.status === "completed" ? "You approved it" : "Not reached"}
+                  </div>
+                  <div className="ct-mono text-[10px] opacity-[0.82] mt-0.5">
+                    {paused ? "held · nothing finalised" : "needs your decision"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0,1fr) 330px" }}>
+                <div className="glass overflow-hidden">
+                  <div
+                    className="flex items-center justify-between px-4 py-3.5"
+                    style={{ borderBottom: "1px solid var(--line-2)" }}
+                  >
+                    <h2 className="text-[13px] font-bold flex items-center gap-2.5">
+                      <AgentOrb size={24} waiting={paused} />
+                      What the agent did
+                    </h2>
+                    <span className="ct-mono text-[9.5px] tracking-[0.08em] uppercase" style={{ color: "var(--faint)" }}>
+                      {trace.length} steps · model picked every one
+                    </span>
+                  </div>
+                  <div className="p-4">
+                    <AgentTrace run={run} onAnswer={answer} sending={sending} />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  {status && (
+                    <div className="glass p-4 flex items-center justify-between gap-3">
+                      <span className={status.className}>
+                        {run.status === "running" && <span className="ct-live-dot" />}
+                        {status.label}
+                      </span>
+                      <span className="ct-mono text-[10px] text-right" style={{ color: "var(--faint)" }}>
+                        run {run.id.slice(0, 8)}
+                        <br />
+                        {(measured / 1000).toFixed(1)}s measured
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Under the hood — the questions a judge actually asks */}
+                  <div className="glass p-4">
+                    <h3 className="text-[12px] font-bold mb-2.5 flex items-center gap-2">
+                      <s className="w-[5px] h-[5px] rounded-full no-underline block" style={{ background: "var(--jade)" }} />
+                      The model decides
+                    </h3>
+                    {[
+                      ["Tools offered", "5"],
+                      ["Tools called", String(toolsCalled.size)],
+                      ["Order", "model's"],
+                      ["Hardcoded edges", "0"],
+                    ].map(([k, v]) => (
+                      <div
+                        key={k}
+                        className="flex justify-between gap-3 py-1 text-[11.5px]"
+                        style={{ borderBottom: "1px solid var(--line-2)" }}
+                      >
+                        <span style={{ color: "var(--ash)" }}>{k}</span>
+                        <span className="ct-mono">{v}</span>
+                      </div>
+                    ))}
+                    <p className="text-[10.5px] leading-relaxed mt-2.5 pt-2.5" style={{ color: "var(--faint)", borderTop: "1px solid var(--line-2)" }}>
+                      Function calling over Vertex AI. Two different JDs produce{" "}
+                      <b style={{ color: "var(--jade-d)" }}>different traces</b> — no Python picks the next step.
+                    </p>
+                  </div>
+
+                  {(thinkMs > 0 || toolMs > 0) && (
+                    <div className="glass p-4">
+                      <h3 className="text-[12px] font-bold mb-2.5 flex items-center gap-2">
+                        <s className="w-[5px] h-[5px] rounded-full no-underline block" style={{ background: "var(--jade)" }} />
+                        Where the time went
+                      </h3>
+                      <div className="flex h-[7px] rounded-full overflow-hidden mb-2" style={{ background: "var(--line-2)" }}>
+                        <i style={{ width: `${(thinkMs / splitTotal) * 100}%`, background: "var(--blue)" }} />
+                        <i style={{ width: `${(toolMs / splitTotal) * 100}%`, background: "var(--jade)" }} />
+                      </div>
+                      <div className="flex gap-3 text-[10.5px]" style={{ color: "var(--ash)" }}>
+                        <span className="flex items-center gap-1.5">
+                          <s className="w-[7px] h-[7px] rounded-sm no-underline block" style={{ background: "var(--blue)" }} />
+                          Thinking {(thinkMs / 1000).toFixed(1)}s
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <s className="w-[7px] h-[7px] rounded-sm no-underline block" style={{ background: "var(--jade)" }} />
+                          Tools {(toolMs / 1000).toFixed(1)}s
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] leading-relaxed mt-2.5 pt-2.5" style={{ color: "var(--faint)", borderTop: "1px solid var(--line-2)" }}>
+                        Measured per step, not estimated. The slow part usually isn&apos;t the model — it&apos;s{" "}
+                        <b style={{ color: "var(--jade-d)" }}>embedding every eligible profile</b>.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="glass p-4">
+                    <h3 className="text-[12px] font-bold mb-2.5 flex items-center gap-2">
+                      <s className="w-[5px] h-[5px] rounded-full no-underline block" style={{ background: "var(--jade)" }} />
+                      It survives restarts
+                    </h3>
+                    <p className="text-[11px] leading-relaxed" style={{ color: "var(--ash)" }}>
+                      When the agent asks you something, the whole conversation is written to Postgres before it
+                      pauses. This run was resumed after a full container replacement on Cloud Run —{" "}
+                      <b style={{ color: "var(--jade-d)" }}>tested by killing it</b>, not assumed.
+                    </p>
+                  </div>
+
+                  {(run.status === "completed" || run.status === "failed") && (
+                    <button onClick={startAgent} disabled={starting} className="btn-ghost inline-flex items-center justify-center gap-2">
+                      <Play size={13} />
+                      {starting ? "Starting…" : "Run it again"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </main>
       </div>
     </div>

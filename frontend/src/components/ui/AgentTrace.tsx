@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, CornerDownLeft } from "lucide-react";
+import AgentOrb from "./AgentOrb";
 
 /* The trace is one line of reasoning, so it's drawn as one line: a rail down
    the left with every step hung off it. The rail is unbroken while the agent is
@@ -29,13 +30,15 @@ export interface AgentRun {
   trace: TraceStep[];
 }
 
+/* Blue is reserved for the model reasoning, jade for the world being acted on,
+   gold for the one moment a human is needed. Nothing else gets a colour. */
 const KIND: Record<string, { label: string; color: string }> = {
-  thought:     { label: "Thought",   color: "#6f9dff" },
-  tool_call:   { label: "Call",      color: "#b06ef7" },
-  observation: { label: "Result",    color: "#22b8d4" },
-  ask_human:   { label: "Asked you", color: "#f59e0b" },
-  decision:    { label: "Decision",  color: "#10b981" },
-  violation:   { label: "Stopped",   color: "#f43f5e" },
+  thought:     { label: "Reasoning", color: "#4C79CF" },
+  tool_call:   { label: "Call",      color: "#0A6B44" },
+  observation: { label: "Result",    color: "#12B872" },
+  ask_human:   { label: "Asked you", color: "#D9922B" },
+  decision:    { label: "Decision",  color: "#0A6B44" },
+  violation:   { label: "Stopped",   color: "#C2453F" },
 };
 
 const ANSWER_PREFIX = "TPO answered:";
@@ -105,7 +108,7 @@ function Step({ step, last, live }: { step: TraceStep; last: boolean; live: bool
     >
       <span
         className="ct-rail"
-        style={last ? { background: `linear-gradient(to bottom, rgba(255,255,255,0.11), transparent)` } : undefined}
+        style={last ? { background: "linear-gradient(to bottom, var(--line), transparent)" } : undefined}
       />
       <span className={`ct-node ${live ? "ct-node-live" : ""}`} />
 
@@ -123,30 +126,31 @@ function Step({ step, last, live }: { step: TraceStep; last: boolean; live: bool
       </div>
 
       <div className="flex items-baseline gap-2.5 flex-wrap">
-        <span className="ct-mono text-[10px] text-white/20 tabular-nums">
+        <span className="ct-mono text-[10px] tabular-nums" style={{ color: "var(--ghost)" }}>
           {String(step.seq).padStart(2, "0")}
         </span>
         <span className="ct-kind" style={{ color: cfg.color }}>{cfg.label}</span>
         {toolName && (
-          <span className="ct-mono text-[11px] text-white/75">{toolName}</span>
+          <span className="ct-mono text-[11.5px]" style={{ color: "var(--fg)" }}>
+            {toolName}()
+          </span>
         )}
       </div>
 
       {/* Thoughts and decisions are prose the model wrote; results are data. */}
       {step.kind === "thought" || step.kind === "decision" || step.kind === "violation" ? (
-        <p className="text-[13.5px] leading-relaxed text-white/70 mt-1.5 max-w-[68ch]">
+        <p className="text-[13px] leading-relaxed mt-1.5 max-w-[68ch]" style={{ color: "var(--ash)" }}>
           {step.summary}
         </p>
       ) : result ? (
         <p
-          className={`ct-mono text-[11.5px] leading-relaxed mt-1.5 max-w-[68ch] ${
-            result.error ? "text-rose-300/90" : "text-white/45"
-          }`}
+          className="ct-mono text-[11.5px] leading-relaxed mt-1.5 max-w-[68ch]"
+          style={{ color: result.error ? "#98332E" : "var(--ash)" }}
         >
           {result.line}
         </p>
       ) : args && Object.keys(args).length > 0 ? (
-        <p className="ct-mono text-[11.5px] text-white/35 mt-1.5 max-w-[68ch] truncate">
+        <p className="ct-mono text-[11.5px] mt-1.5 max-w-[68ch] truncate" style={{ color: "var(--faint)" }}>
           {Object.entries(args)
             .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
             .join("  ")}
@@ -157,7 +161,8 @@ function Step({ step, last, live }: { step: TraceStep; last: boolean; live: bool
         <>
           <button
             onClick={() => setOpen((o) => !o)}
-            className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-white/25 hover:text-white/60 transition-colors rounded"
+            className="mt-1.5 inline-flex items-center gap-1 text-[10px] transition-colors rounded"
+            style={{ color: "var(--faint)" }}
           >
             <ChevronRight size={10} className={open ? "rotate-90 transition-transform" : "transition-transform"} />
             {open ? "Hide" : "Show"} raw
@@ -169,7 +174,8 @@ function Step({ step, last, live }: { step: TraceStep; last: boolean; live: bool
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.2 }}
-                className="ct-mono ct-disclosure text-[10.5px] text-white/40 mt-2 p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]"
+                className="ct-mono ct-disclosure text-[10.5px] mt-2 p-3 rounded-lg"
+                style={{ color: "var(--ash)", background: "var(--wash-2)", border: "1px solid var(--line-2)" }}
               >
                 {JSON.stringify(detail, null, 2)}
               </motion.pre>
@@ -209,27 +215,37 @@ function Handoff({
   };
 
   return (
-    <li className="relative pl-7 pb-5" style={{ color: "#f59e0b" }}>
+    <li className="relative pl-7 pb-5" style={{ color: "var(--gold)" }}>
       <span className={`ct-rail ${open ? "ct-rail-open" : ""}`} />
 
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        className={`rounded-xl p-5 ${open ? "ct-waiting" : "border border-white/[0.08] bg-white/[0.02]"}`}
+        className={`rounded-xl p-5 ${open ? "ct-waiting" : ""}`}
+        style={
+          open
+            ? undefined
+            : { border: "1px solid var(--line)", background: "var(--wash-2)" }
+        }
       >
-        <div className="ct-kind mb-3" style={{ color: open ? "#f59e0b" : "rgba(255,255,255,0.3)" }}>
-          {open ? "Waiting for you" : "You answered"}
+        <div className="flex items-center gap-2.5 mb-3">
+          {open && <AgentOrb size={22} waiting />}
+          <span className="ct-kind" style={{ color: open ? "var(--gold-d)" : "var(--faint)" }}>
+            {open ? "The agent is waiting for you" : "You answered"}
+          </span>
         </div>
 
-        {/* The agent talks to itself in mono. Here it's talking to a person, so
+        {/* The agent talks to itself in mono. Here it's addressing a person, so
             it gets the human typeface. */}
-        <p className="text-[15px] leading-relaxed text-white/90 max-w-[62ch]">{question}</p>
+        <p className="text-[14.5px] leading-relaxed max-w-[62ch]" style={{ color: "var(--fg)" }}>
+          {question}
+        </p>
 
         {answer ? (
           <div className="mt-4 flex items-start gap-2.5">
-            <CornerDownLeft size={13} className="text-emerald-400/70 mt-1 shrink-0" />
-            <p className="text-[13.5px] text-emerald-300/90 leading-relaxed">{answer}</p>
+            <CornerDownLeft size={13} className="mt-1 shrink-0" style={{ color: "var(--jade)" }} />
+            <p className="text-[13.5px] leading-relaxed" style={{ color: "var(--jade-d)" }}>{answer}</p>
           </div>
         ) : (
           <div className="mt-5 space-y-3">
@@ -240,7 +256,12 @@ function Handoff({
                     key={opt}
                     disabled={sending}
                     onClick={() => send(opt)}
-                    className="px-3.5 py-2 rounded-lg text-[13px] font-medium text-amber-200 border border-amber-400/30 bg-amber-400/10 hover:bg-amber-400/20 hover:border-amber-400/50 disabled:opacity-40 transition-all"
+                    className="px-3.5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-40 transition-all"
+                    style={{
+                      color: "var(--gold-d)",
+                      background: "var(--gold-lt)",
+                      border: "1px solid var(--gold-ln)",
+                    }}
                   >
                     {opt}
                   </button>
@@ -327,12 +348,12 @@ export default function AgentTrace({
       <AnimatePresence initial={false}>{rows}</AnimatePresence>
 
       {running && (
-        <li className="relative pl-7 pb-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+        <li className="relative pl-7 pb-2" style={{ color: "var(--jade)" }}>
           <span
             className="ct-rail"
-            style={{ background: "linear-gradient(to bottom, rgba(255,255,255,0.11), transparent)" }}
+            style={{ background: "linear-gradient(to bottom, var(--line), transparent)" }}
           />
-          <div className="flex items-center gap-2 text-white/30 text-[12px] pt-0.5">
+          <div className="flex items-center gap-2 text-[12px] pt-0.5" style={{ color: "var(--faint)" }}>
             <span className="ct-live-dot" />
             Thinking…
           </div>

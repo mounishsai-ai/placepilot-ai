@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 
 import {
   Briefcase, Award, TrendingUp,
-  Play, AlertTriangle, Zap,
+  Play, Zap, X,
   ShieldAlert, History, Bot, UserCheck,
 } from "lucide-react";
 
@@ -86,6 +86,7 @@ export default function TPODashboard() {
   const [exceptions, setExceptions] = useState<Record<string, unknown>[]>([]);
   const [auditTrail, setAuditTrail] = useState<Record<string, unknown>[]>([]);
   const [exceptionsLoading, setExceptionsLoading] = useState(true);
+  const [alertDismissed, setAlertDismissed] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -151,23 +152,39 @@ export default function TPODashboard() {
 
         <main className="flex-1 p-8 space-y-8">
           {/* ── Pending Approvals Banner ───────────────────────────────── */}
-          {pendingDrives.length > 0 && (
+          {/* Gold, because gold means one thing in this app: the agent has
+              stopped and needs a person. Dismissible — the drives keep waiting
+              in the list either way, so this is a nudge, not a gate. */}
+          {pendingDrives.length > 0 && !alertDismissed && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="glass border border-amber-500/30 bg-amber-500/[0.06] p-4 flex items-center gap-4"
+              className="relative rounded-xl p-4 pr-11 flex items-center gap-3.5"
+              style={{ background: "var(--gold-lt)", border: "1px solid var(--gold-ln)" }}
             >
-              <AlertTriangle size={20} className="text-amber-400 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-amber-300 font-semibold text-sm">
-                  {pendingDrives.length} drive{pendingDrives.length > 1 ? "s" : ""} awaiting your approval
+              <div
+                className="w-[26px] h-[26px] rounded-lg grid place-items-center text-white text-sm font-bold flex-shrink-0"
+                style={{ background: "var(--gold)" }}
+              >
+                !
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-[13px]" style={{ color: "var(--gold-d)" }}>
+                  {pendingDrives.length} drive{pendingDrives.length > 1 ? "s are" : " is"} waiting on your approval
                 </p>
-                <p className="text-amber-400/60 text-xs mt-0.5">
+                <p className="ct-mono text-[10.5px] mt-0.5 truncate" style={{ color: "#A0782F" }}>
                   {pendingDrives.map((d) => d.title as string).join(" · ")}
                 </p>
               </div>
+              <button
+                onClick={() => setAlertDismissed(true)}
+                aria-label="Dismiss"
+                className="absolute top-2.5 right-2.5 w-6 h-6 rounded-md grid place-items-center transition-colors"
+                style={{ color: "#B08A45" }}
+              >
+                <X size={14} />
+              </button>
             </motion.div>
-
           )}
 
           {/* ── KPI Row ───────────────────────────────────────────────── */}
@@ -187,11 +204,12 @@ export default function TPODashboard() {
               accentColor="cyan"
               delay={0.08}
             />
+            {/* The one bright card — the outcome the whole system exists for. */}
             <MetricCard
               title="Students Placed"
               value={loading ? "—" : String((kpis as Record<string,unknown>)?.placed_students ?? 0)}
               icon={<Award size={20} />}
-              accentColor="green"
+              hero
               trend={12}
               subtitle={`${(kpis as Record<string,unknown>)?.placement_rate_pct ?? 0}% placement rate`}
               delay={0.16}
