@@ -13,6 +13,7 @@ import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import MetricCard from "@/components/ui/MetricCard";
 import AgentEventFeed from "@/components/ui/AgentEventFeed";
+import AgentOrb from "@/components/ui/AgentOrb";
 import { analyticsAPI, drivesAPI } from "@/lib/api";
 import { useDashboardStore } from "@/lib/store";
 import { useTPOWebSocket } from "@/lib/websocket";
@@ -148,7 +149,17 @@ export default function TPODashboard() {
           title="Placement Dashboard"
           subtitle="Real-time AI placement operations"
           connected={connected}
-        />
+        >
+          {pendingDrives.length > 0 && (
+            <span
+              className="inline-flex items-center gap-2 text-[12px] font-semibold px-3 py-1.5 rounded-full"
+              style={{ background: "var(--gold-lt)", border: "1px solid var(--gold-ln)", color: "var(--gold-d)" }}
+            >
+              <AgentOrb size={18} waiting />
+              {pendingDrives.length} needs you
+            </span>
+          )}
+        </TopBar>
 
         <main className="flex-1 p-8 space-y-8">
           {/* ── Pending Approvals Banner ───────────────────────────────── */}
@@ -204,12 +215,10 @@ export default function TPODashboard() {
               accentColor="cyan"
               delay={0.08}
             />
-            {/* The one bright card — the outcome the whole system exists for. */}
             <MetricCard
               title="Students Placed"
               value={loading ? "—" : String((kpis as Record<string,unknown>)?.placed_students ?? 0)}
               icon={<Award size={20} />}
-              hero
               trend={12}
               subtitle={`${(kpis as Record<string,unknown>)?.placement_rate_pct ?? 0}% placement rate`}
               delay={0.16}
@@ -251,14 +260,20 @@ export default function TPODashboard() {
 
             {/* Agent Activity — 2/3, fed from WS + historical audit trail */}
             <div className="col-span-2 glass-card">
-              <div className="flex items-center gap-2 mb-5">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <h2 className="text-white font-semibold text-base">Agent Activity</h2>
+              <div className="flex items-center gap-2.5 mb-5">
+                {/* The agent's own mark, present wherever it's speaking. Goes
+                    gold when a drive is sitting waiting on the TPO. */}
+                <AgentOrb size={26} waiting={pendingDrives.length > 0} />
+                <h2 className="text-base">Agent activity</h2>
                 {connected && (
-                  <span className="ml-auto badge-green badge text-[10px]">LIVE</span>
+                  <span className="ml-auto badge-green badge text-[10px]">
+                    <span className="ct-live-dot" /> Live
+                  </span>
                 )}
                 {!connected && combinedFeed.length > 0 && (
-                  <span className="ml-auto text-white/30 text-[10px]">historical</span>
+                  <span className="ml-auto text-[10px]" style={{ color: "var(--faint)" }}>
+                    historical
+                  </span>
                 )}
               </div>
               <AgentEventFeed events={combinedFeed} />
@@ -270,14 +285,17 @@ export default function TPODashboard() {
           <div className="grid grid-cols-5 gap-6">
             {/* Exceptions — borderline students the AI flagged for human review */}
             <div className="col-span-3 glass-card">
+              {/* Jade, not gold: these are flagged for a look when convenient.
+                  Gold is only for a run that has actually stopped and is blocked
+                  on the TPO — spending it here would dilute the one signal. */}
               <div className="flex items-center gap-2 mb-5">
-                <ShieldAlert size={16} className="text-amber-400" />
-                <h2 className="text-white font-semibold text-base">Exceptions — Needs Your Review</h2>
-                <span className="ml-auto badge-amber badge text-[10px]">
+                <ShieldAlert size={16} style={{ color: "var(--jade-d)" }} />
+                <h2 className="text-base"><em>Exceptions</em> — needs your review</h2>
+                <span className="ml-auto badge-green badge text-[10px]">
                   {exceptionsLoading ? "…" : exceptions.length}
                 </span>
               </div>
-              <p className="text-white/35 text-xs mb-4">
+              <p className="text-xs mb-4" style={{ color: "var(--ash)" }}>
                 Students who just barely missed eligibility — a few tenths of CGPA,
                 or one backlog over the limit. Not auto-rejected; flagged for you.
               </p>
@@ -295,9 +313,13 @@ export default function TPODashboard() {
                     const reasons = (exc.reasons as { rule: string; passed: boolean; reason: string }[]) ?? [];
                     const failedReasons = reasons.filter((r) => !r.passed);
                     return (
-                      <div key={exc.id as string} className="rounded-xl border border-amber-500/15 bg-amber-500/[0.03] p-3">
+                      <div
+                        key={exc.id as string}
+                        className="rounded-xl p-3"
+                        style={{ background: "var(--wash-2)", border: "1px solid #CBEDDD" }}
+                      >
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-white font-medium text-sm">{exc.student_name as string}</span>
+                          <span className="font-medium text-sm">{exc.student_name as string}</span>
                           <span className={`badge text-[10px] ${exc.eligible ? "badge-green" : "badge-rose"}`}>
                             {exc.eligible ? "Eligible" : "Not eligible"}
                           </span>

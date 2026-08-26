@@ -33,29 +33,25 @@ export default function MetricCard({
       className={clsx("metric-card", hero && "stat-hero")}
     >
       <div className="flex items-start justify-between mb-4">
-        <div
-          className="p-3 rounded-xl"
-          style={{
-            background: hero ? "rgba(255,255,255,.18)" : ICON_TINT,
-            color: hero ? "#fff" : ICON_FG,
-          }}
-        >
+        <div className="p-3 rounded-xl" style={{ background: ICON_TINT, color: ICON_FG }}>
           {icon}
         </div>
         {trend !== undefined && (
           <span
             className="ct-mono flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full"
-            style={{
-              background: hero ? "rgba(255,255,255,.2)" : ICON_TINT,
-              color: hero ? "#fff" : ICON_FG,
-            }}
+            style={{ background: ICON_TINT, color: ICON_FG }}
           >
             {trend >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
             {Math.abs(trend)}%
           </span>
         )}
       </div>
-      <div className="stat-number text-[29px] font-bold mb-1 text-white">{value}</div>
+      {/* Explicit colour, not `text-white`: the migration shim remaps that class
+          to dark ink for the light layout, which would bury the number on this
+          dark card. */}
+      <div className="stat-number text-[29px] font-bold mb-1" style={{ color: "#FFFFFF" }}>
+        {value}
+      </div>
       <div className="text-sm font-medium" style={{ color: "rgba(234,246,241,.62)" }}>{title}</div>
       {subtitle && (
         <div className="text-xs mt-1" style={{ color: "rgba(234,246,241,.4)" }}>{subtitle}</div>

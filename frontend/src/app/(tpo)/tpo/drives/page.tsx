@@ -53,6 +53,8 @@ interface AgentEvent {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+/* badge-amber is reserved for the two states where the agent has stopped and
+   needs the TPO. Everything else is jade (in flight or done) or grey (inert). */
 const STATUS_COLOR: Record<string, string> = {
   draft:               "badge-gray",
   jd_analyzed:         "badge-blue",
@@ -67,17 +69,20 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled:           "badge-rose",
 };
 
+/* Named for what the TPO sees happening, in plain words. The ones that need a
+   person say so outright — that's the only state that ever gets gold. */
 const STATUS_LABEL: Record<string, string> = {
-  draft:               "Draft",
-  jd_analyzed:         "🧠 Analyzing JD…",
-  eligibility_checked: "✅ Checking Eligibility…",
-  matched:             "🔍 Ranking Candidates…",
-  shortlist_pending:   "⏸ Awaiting Approval",
-  shortlist_approved:  "Shortlist Approved",
-  schedule_pending:    "⏸ Schedule Review",
-  scheduled:           "Interviews Scheduled",
+  draft:               "Not started",
+  jd_analyzed:         "Reading the JD",
+  eligibility_checked: "Checking who qualifies",
+  matched:             "Ranking candidates",
+  shortlist_pending:   "Waiting for you",
+  shortlist_approved:  "Shortlist approved",
+  schedule_pending:    "Schedule needs review",
+  scheduled:           "Interviews scheduled",
   ongoing:             "Ongoing",
   completed:           "Completed",
+  cancelled:           "Cancelled",
 };
 
 const PIPELINE_STEPS = [
@@ -226,8 +231,11 @@ function ShortlistModal({
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-white font-bold text-lg">⏸ Human-in-the-Loop: Review Shortlist</h2>
-            <p className="text-white/40 text-sm">AI ranked {candidates.length} candidates — select who to shortlist</p>
+            {/* Named for what the TPO is doing, not for the architecture. */}
+            <h2 className="text-lg">The agent <em>ranked them. You decide.</em></h2>
+            <p className="text-sm mt-0.5" style={{ color: "var(--ash)" }}>
+              {candidates.length} candidates, ordered by how well they match the JD. Pick who moves forward.
+            </p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -687,12 +695,15 @@ function DriveCard({
 
         {/* Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* The trace is the whole argument of this project — it gets a
+              first-class entry point on every drive, not a hidden menu item. */}
           <Link
             href={`/tpo/drives/${drive.id}/agent`}
-            className="btn-ghost text-xs flex items-center gap-1.5 !py-1.5 !px-3"
+            className="text-xs font-semibold flex items-center gap-1.5 py-1.5 px-3 rounded-lg transition-colors"
+            style={{ color: "var(--jade-d)", background: "var(--wash)", border: "1px solid #CBEDDD" }}
             title="Watch the agent decide each step"
           >
-            <Radio size={13} /> Control Tower
+            <Radio size={13} /> Watch it think
           </Link>
           {drive.status === "draft" && (
             <button
@@ -933,24 +944,42 @@ export default function DrivesPage() {
         <TopBar
           title="Placement Drives"
           subtitle={pollingActive
-            ? "🔄 Pipeline running — auto-refreshing every 4s…"
-            : "Manage drives and AI pipeline execution"
+            ? "A drive is in flight — refreshing every 4s"
+            : "Every drive, and what the agent has done to it"
           }
           connected={connected}
         />
 
-        <main className="p-8 space-y-6">
-          {/* Stats bar */}
-          <div className="grid grid-cols-4 gap-4">
+        <main className="p-7 space-y-5">
+          {/* Stats bar — the one that needs a person is the one that stands out */}
+          <div className="grid grid-cols-4 gap-3.5">
             {[
-              { label: "Total Drives", value: statsBar.total,     color: "text-white" },
-              { label: "Active",       value: statsBar.active,    color: "text-blue-400" },
-              { label: "Needs Review", value: statsBar.pending,   color: "text-amber-400" },
-              { label: "Completed",    value: statsBar.completed, color: "text-emerald-400" },
+              { label: "Total drives",  value: statsBar.total,     gold: false },
+              { label: "In flight",     value: statsBar.active,    gold: false },
+              { label: "Waiting on you", value: statsBar.pending,  gold: true  },
+              { label: "Completed",     value: statsBar.completed, gold: false },
             ].map((stat) => (
-              <div key={stat.label} className="glass-card text-center py-4">
-                <div className={`text-3xl font-bold ${stat.color}`}>{stat.value}</div>
-                <div className="text-white/40 text-xs mt-1">{stat.label}</div>
+              <div
+                key={stat.label}
+                className="rounded-xl py-4 px-5"
+                style={
+                  stat.gold && stat.value > 0
+                    ? { background: "var(--gold-lt)", border: "1px solid var(--gold-ln)" }
+                    : { background: "var(--card)", border: "1px solid var(--line)" }
+                }
+              >
+                <div
+                  className="font-display text-[28px] font-bold leading-none"
+                  style={{ color: stat.gold && stat.value > 0 ? "var(--gold-d)" : "var(--fg)" }}
+                >
+                  {stat.value}
+                </div>
+                <div
+                  className="text-[11.5px] mt-1.5"
+                  style={{ color: stat.gold && stat.value > 0 ? "#A0782F" : "var(--ash)" }}
+                >
+                  {stat.label}
+                </div>
               </div>
             ))}
           </div>
