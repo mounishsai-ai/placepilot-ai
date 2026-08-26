@@ -1,10 +1,9 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion } from "framer-motion";
 import {
   LayoutDashboard, Briefcase, Users, Calendar,
-  BarChart2, Bell, LogOut, Cpu,
+  BarChart2, Bell, LogOut,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { clsx } from "clsx";
@@ -23,61 +22,67 @@ export default function TPOSidebar() {
   const { user, logout } = useAuthStore();
 
   return (
-    <aside className="sidebar flex flex-col py-6">
-      {/* Logo */}
-      <div className="px-6 mb-8">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <Cpu size={16} className="text-white" />
+    <aside className="sidebar flex flex-col py-5">
+      {/* The product's mark — deliberately plain. The animated orb is the
+          agent's identity and is never used as a brand logo. */}
+      <div className="px-5 mb-7">
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-8 h-8 rounded-[9px] flex items-center justify-center text-white font-display font-extrabold text-[15px]"
+            style={{
+              background: "linear-gradient(140deg,var(--jade),#0C8F58)",
+              boxShadow: "0 2px 8px rgba(15,169,104,.3)",
+            }}
+          >
+            P
           </div>
           <div>
-            <div className="text-white font-bold text-sm leading-none">PlacementAI</div>
-            <div className="text-white/35 text-[10px] mt-0.5">TPO Portal</div>
+            <div className="font-display font-bold text-[14.5px] leading-tight" style={{ color: "var(--fg)" }}>
+              PlacementAI
+            </div>
+            <div className="ct-mono text-[8px] tracking-[0.13em] mt-0.5" style={{ color: "var(--faint)" }}>
+              TPO PORTAL
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 flex flex-col gap-1">
+      <nav className="flex-1 flex flex-col gap-0.5">
         {NAV.map(({ href, icon: Icon, label }) => {
           const active = pathname.startsWith(href);
           return (
             <Link key={href} href={href}>
-              <motion.div
-                whileHover={{ x: 2 }}
-                className={clsx("sidebar-item", active && "active")}
-              >
-                <Icon size={18} className={active ? "text-blue-400" : ""} />
-                <span className="text-sm">{label}</span>
-                {active && (
-                  <motion.div
-                    layoutId="sidebar-active"
-                    className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-400"
-                  />
-                )}
-              </motion.div>
+              <div className={clsx("sidebar-item", active && "active")}>
+                <Icon size={17} />
+                <span className="text-[13px]">{label}</span>
+              </div>
             </Link>
           );
         })}
       </nav>
 
-      {/* User + Logout */}
-      <div className="px-2 mt-4 pt-4 border-t border-white/[0.06]">
-        <div className="sidebar-item mb-1">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+      <div className="px-2 mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
+        <div className="sidebar-item mb-0.5">
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
+            style={{ background: "linear-gradient(140deg,var(--jade),#0C8F58)" }}
+          >
             {user?.email?.[0]?.toUpperCase() ?? "T"}
           </div>
           <div className="min-w-0">
-            <div className="text-white/70 text-xs truncate">{user?.email}</div>
-            <div className="text-white/30 text-[10px]">TPO</div>
+            <div className="text-[11.5px] font-semibold truncate" style={{ color: "var(--fg)" }}>
+              {user?.email}
+            </div>
+            <div className="text-[9.5px]" style={{ color: "var(--faint)" }}>TPO</div>
           </div>
         </div>
         <button
           onClick={logout}
-          className="sidebar-item w-full text-rose-400 hover:text-rose-300 hover:bg-rose-500/[0.08]"
+          className="sidebar-item w-full"
+          style={{ color: "var(--rose)" }}
         >
           <LogOut size={16} />
-          <span className="text-sm">Sign out</span>
+          <span className="text-[13px]">Sign out</span>
         </button>
       </div>
     </aside>

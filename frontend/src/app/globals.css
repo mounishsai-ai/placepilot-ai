@@ -1,398 +1,440 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ── Root & Reset ───────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   JADE — light layout, jade where the old theme used blue.
+
+   Two rules the whole system rests on:
+     · The ink-to-jade gradient is rationed. Stat cards and pipeline tiles
+       carry it; nothing else does, so dark reads as "status", not decoration.
+     · Gold means exactly one thing anywhere in this app: the agent has
+       stopped and needs a human. It is never used to decorate.
+   ══════════════════════════════════════════════════════════════════════════ */
 :root {
-  --bg-primary: #020209;
-  --bg-secondary: #070714;
-  --bg-card: rgba(255,255,255,0.06);
-  --border-glass: rgba(255,255,255,0.12);
-  --text-primary: #f0f4ff;
-  --text-secondary: rgba(240,244,255,0.6);
-  --text-muted: rgba(240,244,255,0.35);
-  --accent-blue: #4d88ff;
-  --accent-purple: #a855f7;
-  --accent-cyan: #06b6d4;
-  --accent-green: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
+  color-scheme: light;
+
+  --jade:      #0FA968;
+  --jade-d:    #0A6B44;   /* jade that passes contrast on white */
+  --jade-mid:  #12B872;
+  --spring:    #34D89A;
+  --mint:      #A9F1D2;
+  --wash:      #EEFBF5;
+  --wash-2:    #F6FDFA;
+
+  --ink:       #04120D;
+  --ink-2:     #08251A;
+  --ink-3:     #0B3826;
+
+  --paper:     #F7F9F8;
+  --card:      #FFFFFF;
+  --line:      #E4EAE7;
+  --line-2:    #F0F4F2;
+
+  --fg:        #0B1714;
+  --ash:       #5F706A;
+  --faint:     #93A29C;
+  --ghost:     #B6C2BD;
+
+  --gold:      #D9922B;
+  --gold-d:    #8A5A12;
+  --gold-lt:   #FDF4E3;
+  --gold-ln:   #F0DDB8;
+
+  --blue:      #4C79CF;   /* reserved: the model's own reasoning */
+  --blue-lt:   #EEF3FF;
+  --rose:      #C2453F;
+  --rose-lt:   #FDF0EF;
+
+  /* legacy aliases — older markup still references these */
+  --bg-primary: var(--paper);
+  --bg-secondary: var(--card);
+  --text-primary: var(--fg);
+  --text-secondary: var(--ash);
+  --text-muted: var(--faint);
+  --accent-blue: var(--jade);
+  --accent-purple: var(--jade-d);
+  --accent-cyan: var(--jade-mid);
+  --accent-green: var(--jade);
+  --accent-amber: var(--gold);
+  --accent-rose: var(--rose);
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-html {
-  scroll-behavior: smooth;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
 
 body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  background-color: var(--paper);
+  color: var(--fg);
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
   overflow-x: hidden;
 }
 
-/* ── Glassmorphism Components ───────────────────────────────────────────── */
+h1, h2, h3, .display {
+  font-family: 'Bricolage Grotesque', 'Inter', sans-serif;
+  letter-spacing: -.03em;
+  font-weight: 700;
+}
+.font-display { font-family: 'Bricolage Grotesque', 'Inter', sans-serif; letter-spacing: -.03em; }
+.mono, .font-mono { font-family: 'JetBrains Mono', monospace; font-variant-ligatures: none; }
+
+/* Ink sentence, jade on the clause that matters. Used for every headline
+   that states what the agent actually did — the emphasis carries the
+   meaning, so it goes on the verb, never on a decorative word. */
+h1 em, h2 em, h3 em, .hl {
+  font-style: normal;
+  color: var(--jade-d);
+}
+
 @layer components {
-  /* ── Global dark select/option fix (Windows Chrome shows white otherwise) ── */
   select {
-    background-color: #0d1117 !important;
-    color: white;
+    background-color: var(--card) !important;
+    color: var(--fg);
+    border: 1px solid var(--line);
   }
-  select option {
-    background-color: #0d1117;
-    color: white;
-  }
+  select option { background-color: var(--card); color: var(--fg); }
 
+  /* ── Surfaces ──────────────────────────────────────────────────────── */
   .glass {
-    @apply bg-white/[0.06] backdrop-blur-xl border border-white/[0.10] rounded-2xl;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08);
+    @apply bg-white border rounded-2xl;
+    border-color: var(--line);
   }
-
   .glass-heavy {
-    @apply bg-white/[0.12] backdrop-blur-2xl border border-white/[0.18] rounded-2xl;
-    box-shadow: 0 16px 48px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.12);
+    @apply bg-white border rounded-2xl;
+    border-color: var(--line);
+    box-shadow: 0 4px 20px rgba(11,23,20,.06);
   }
-
   .glass-card {
-    @apply glass p-6 transition-all duration-300;
+    @apply glass p-6 transition-all duration-200;
   }
-
   .glass-card:hover {
-    @apply bg-white/[0.09] border-white/[0.16];
-    box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(77,136,255,0.15), inset 0 1px 0 rgba(255,255,255,0.1);
-    transform: translateY(-2px);
+    border-color: #D3DEDA;
+    box-shadow: 0 4px 18px rgba(11,23,20,.07);
   }
 
+  /* ── Buttons ───────────────────────────────────────────────────────── */
   .btn-primary {
     @apply px-6 py-3 rounded-xl font-semibold text-white transition-all duration-200 relative overflow-hidden;
-    background: linear-gradient(135deg, #4d88ff 0%, #7c3aed 100%);
-    box-shadow: 0 4px 15px rgba(77,136,255,0.4);
+    background: linear-gradient(135deg, var(--jade) 0%, #0C8F58 100%);
+    box-shadow: 0 2px 10px rgba(15,169,104,.28);
   }
-
-  .btn-primary:hover {
-    box-shadow: 0 6px 25px rgba(77,136,255,0.6);
-    transform: translateY(-1px);
-  }
-
-  .btn-primary:active {
-    transform: translateY(0);
-  }
+  .btn-primary:hover { box-shadow: 0 4px 16px rgba(15,169,104,.4); transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
 
   .btn-secondary {
-    @apply px-6 py-3 rounded-xl font-semibold text-white/80 glass border border-white/10 transition-all duration-200;
+    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-200 bg-white border;
+    color: var(--ash);
+    border-color: var(--line);
   }
-
-  .btn-secondary:hover {
-    @apply text-white border-white/25;
-    transform: translateY(-1px);
-  }
+  .btn-secondary:hover { color: var(--fg); border-color: var(--ghost); }
 
   .btn-danger {
     @apply px-4 py-2 rounded-lg font-semibold text-white transition-all duration-200;
-    background: linear-gradient(135deg, #f43f5e 0%, #dc2626 100%);
-    box-shadow: 0 4px 15px rgba(244,63,94,0.35);
+    background: linear-gradient(135deg, #D9534F 0%, var(--rose) 100%);
+    box-shadow: 0 2px 8px rgba(194,69,63,.26);
   }
-
   .btn-success {
     @apply px-4 py-2 rounded-lg font-semibold text-white transition-all duration-200;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    box-shadow: 0 4px 15px rgba(16,185,129,0.35);
+    background: linear-gradient(135deg, var(--jade-mid) 0%, var(--jade) 100%);
+    box-shadow: 0 2px 8px rgba(15,169,104,.26);
   }
-
   .btn-ghost {
-    @apply px-4 py-2 rounded-lg font-medium text-white/60 transition-all duration-200;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.10);
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 bg-white border;
+    color: var(--ash);
+    border-color: var(--line);
   }
-  .btn-ghost:hover {
-    @apply text-white;
-    background: rgba(255,255,255,0.08);
-    border-color: rgba(255,255,255,0.18);
-  }
-  .btn-ghost:disabled {
-    @apply opacity-40 cursor-not-allowed;
-  }
+  .btn-ghost:hover { color: var(--fg); border-color: var(--ghost); background: var(--wash-2); }
+  .btn-ghost:disabled { @apply opacity-40 cursor-not-allowed; }
 
-  /* ── Status Badges ─────────────────────────────────────────────────── */
+  /* ── Badges ────────────────────────────────────────────────────────── */
   .badge {
     @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold;
   }
-
-  .badge-blue { @apply badge bg-blue-500/20 text-blue-300 border border-blue-500/30; }
-  .badge-green { @apply badge bg-emerald-500/20 text-emerald-300 border border-emerald-500/30; }
-  .badge-amber { @apply badge bg-amber-500/20 text-amber-300 border border-amber-500/30; }
-  .badge-rose { @apply badge bg-rose-500/20 text-rose-300 border border-rose-500/30; }
-  .badge-purple { @apply badge bg-purple-500/20 text-purple-300 border border-purple-500/30; }
-  .badge-cyan { @apply badge bg-cyan-500/20 text-cyan-300 border border-cyan-500/30; }
-  .badge-gray { @apply badge bg-white/10 text-white/60 border border-white/20; }
+  .badge-blue   { @apply badge; background: var(--wash);    color: var(--jade-d); border: 1px solid #CBEDDD; }
+  .badge-green  { @apply badge; background: var(--wash);    color: var(--jade-d); border: 1px solid #CBEDDD; }
+  .badge-amber  { @apply badge; background: var(--gold-lt); color: var(--gold-d); border: 1px solid var(--gold-ln); }
+  .badge-rose   { @apply badge; background: var(--rose-lt); color: #98332E;       border: 1px solid #F3D3D1; }
+  .badge-purple { @apply badge; background: var(--wash);    color: var(--jade-d); border: 1px solid #CBEDDD; }
+  .badge-cyan   { @apply badge; background: var(--blue-lt); color: var(--blue);   border: 1px solid #DBE5FA; }
+  .badge-gray   { @apply badge; background: #F4F6F5;        color: var(--ash);    border: 1px solid var(--line); }
 
   /* ── Input ─────────────────────────────────────────────────────────── */
   .input-glass {
-    @apply w-full px-4 py-3 rounded-xl text-white placeholder-white/30 transition-all duration-200;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
+    @apply w-full px-4 py-3 rounded-xl transition-all duration-200 bg-white border;
+    color: var(--fg);
+    border-color: var(--line);
     outline: none;
   }
-
+  .input-glass::placeholder { color: var(--ghost); }
   .input-glass:focus {
-    border-color: rgba(77,136,255,0.6);
-    box-shadow: 0 0 0 3px rgba(77,136,255,0.15);
-    background: rgba(255,255,255,0.08);
+    border-color: var(--jade);
+    box-shadow: 0 0 0 3px rgba(15,169,104,.13);
   }
 
-  /* ── Metrics Card ──────────────────────────────────────────────────── */
-  .metric-card {
-    @apply glass-card relative overflow-hidden;
+  /* ── Stat cards — ink under the text, jade everywhere else ─────────── */
+  /* The number and its label sit bottom-left, so that corner stays near-black
+     and the green is pushed up and right where nothing has to stay legible. */
+  .metric-card, .stat-dark {
+    @apply relative overflow-hidden rounded-2xl p-5;
+    background:
+      radial-gradient(130% 105% at 6% 100%, var(--ink) 0%, rgba(4,18,13,.86) 26%, transparent 62%),
+      linear-gradient(28deg, #061C14 0%, #0A3B28 46%, #12613F 100%);
+    color: #EAF6F1;
+    box-shadow: 0 3px 16px rgba(4,18,13,.22);
   }
-
-  .metric-card::before {
+  .metric-card::after, .stat-dark::after {
     content: '';
-    @apply absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300;
-    background: radial-gradient(ellipse at top left, rgba(77,136,255,0.08) 0%, transparent 60%);
+    @apply absolute inset-0 pointer-events-none;
+    background: radial-gradient(105% 80% at 100% 0%, rgba(52,216,154,.34) 0%, transparent 60%);
+  }
+  .metric-card > *, .stat-dark > * { position: relative; z-index: 1; }
+
+  /* the agent's own headline number gets the bright card */
+  .stat-hero {
+    background: linear-gradient(142deg, #0C8F58 0%, var(--jade-mid) 52%, #2ACF8E 100%);
+    box-shadow: 0 3px 18px rgba(18,184,114,.30);
+  }
+  .stat-hero::after {
+    background: radial-gradient(115% 85% at 105% -10%, rgba(255,255,255,.22) 0%, transparent 58%);
   }
 
-  .metric-card:hover::before {
-    @apply opacity-100;
+  /* ── Pipeline tiles — lighter jade, white text still holds ─────────── */
+  .tile {
+    @apply relative overflow-hidden rounded-xl;
+    padding: 11px 13px;
+  }
+  .tile-done {
+    background: linear-gradient(135deg, var(--jade-mid) 0%, #1FC47E 55%, var(--spring) 100%);
+    color: #fff;
+    box-shadow: 0 2px 10px rgba(18,184,114,.22);
+  }
+  .tile-wait {
+    background: linear-gradient(135deg, #E0A03A 0%, #E8AE4E 55%, #F0BE6B 100%);
+    color: #fff;
+    box-shadow: 0 2px 12px rgba(224,160,58,.26);
+  }
+  .tile-todo {
+    background: var(--wash-2);
+    border: 1px dashed var(--line);
+    color: var(--faint);
   }
 
   /* ── Sidebar ───────────────────────────────────────────────────────── */
   .sidebar {
-    @apply fixed left-0 top-0 h-full w-64 z-40;
-    background: rgba(7,7,20,0.9);
-    backdrop-filter: blur(24px);
-    border-right: 1px solid rgba(255,255,255,0.08);
+    @apply fixed left-0 top-0 h-full w-64 z-40 bg-white;
+    border-right: 1px solid var(--line);
   }
-
   .sidebar-item {
-    @apply flex items-center gap-3 px-4 py-3 mx-2 rounded-xl text-white/60 font-medium transition-all duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-4 py-2.5 mx-2 rounded-xl font-medium transition-all duration-150 cursor-pointer;
+    color: var(--ash);
   }
-
-  .sidebar-item:hover {
-    @apply text-white bg-white/[0.06];
-  }
-
+  .sidebar-item:hover { color: var(--fg); background: var(--wash-2); }
   .sidebar-item.active {
-    @apply text-white;
-    background: linear-gradient(135deg, rgba(77,136,255,0.2) 0%, rgba(124,58,237,0.15) 100%);
-    border: 1px solid rgba(77,136,255,0.25);
+    color: var(--jade-d);
+    background: var(--wash);
+    font-weight: 650;
   }
 
-  /* ── Agent Live Feed ───────────────────────────────────────────────── */
+  /* ── Agent feed ────────────────────────────────────────────────────── */
   .agent-event {
-    @apply flex items-start gap-3 p-4 rounded-xl border border-white/[0.06] transition-all duration-200;
-    background: rgba(255,255,255,0.03);
+    @apply flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 bg-white;
+    border-color: var(--line-2);
   }
+  .agent-event:hover { border-color: var(--line); background: var(--wash-2); }
+  .agent-pulse { @apply w-2 h-2 rounded-full animate-pulse mt-1.5 flex-shrink-0; }
 
-  .agent-event:hover {
-    @apply border-white/[0.12];
-    background: rgba(255,255,255,0.05);
-  }
-
-  .agent-pulse {
-    @apply w-2 h-2 rounded-full animate-pulse mt-1.5 flex-shrink-0;
-  }
-
-  /* ── Progress Bar ──────────────────────────────────────────────────── */
-  .progress-bar {
-    @apply h-2 rounded-full overflow-hidden;
-    background: rgba(255,255,255,0.08);
-  }
-
+  /* ── Progress ──────────────────────────────────────────────────────── */
+  .progress-bar { @apply h-2 rounded-full overflow-hidden; background: var(--line-2); }
   .progress-fill {
     @apply h-full rounded-full transition-all duration-700;
-    background: linear-gradient(90deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
-    box-shadow: 0 0 10px rgba(77,136,255,0.5);
+    background: linear-gradient(90deg, var(--jade) 0%, var(--spring) 100%);
   }
 
-  /* ── Pipeline Steps ────────────────────────────────────────────────── */
-  .pipeline-step {
-    @apply flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium;
-  }
-
-  .pipeline-step.done {
-    @apply bg-emerald-500/20 text-emerald-300 border border-emerald-500/30;
-  }
-
-  .pipeline-step.active {
-    @apply bg-blue-500/20 text-blue-300 border border-blue-500/30;
-  }
-
-  .pipeline-step.pending {
-    @apply bg-white/[0.05] text-white/40 border border-white/[0.08];
-  }
-
-  .pipeline-step.waiting {
-    @apply bg-amber-500/20 text-amber-300 border border-amber-500/30;
-  }
+  /* ── Pipeline step pills ───────────────────────────────────────────── */
+  .pipeline-step { @apply flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium; }
+  .pipeline-step.done    { background: var(--wash);    color: var(--jade-d); border: 1px solid #CBEDDD; }
+  .pipeline-step.active  { background: var(--wash);    color: var(--jade-d); border: 1px solid var(--jade); }
+  .pipeline-step.pending { background: #F4F6F5;        color: var(--faint);  border: 1px solid var(--line); }
+  .pipeline-step.waiting { background: var(--gold-lt); color: var(--gold-d); border: 1px solid var(--gold-ln); }
 
   /* ── Scrollbar ─────────────────────────────────────────────────────── */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar { width: 7px; height: 7px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+  ::-webkit-scrollbar-thumb { background: #D8E1DD; border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--ghost); }
 }
 
-/* ── Animated Background ────────────────────────────────────────────────── */
-.bg-cosmic {
-  background: radial-gradient(ellipse at 20% 10%, rgba(77,136,255,0.06) 0%, transparent 50%),
-              radial-gradient(ellipse at 80% 80%, rgba(168,85,247,0.06) 0%, transparent 50%),
-              radial-gradient(ellipse at 50% 50%, rgba(6,182,212,0.03) 0%, transparent 70%),
-              #020209;
-}
+/* ── Page ground ─────────────────────────────────────────────────────── */
+.bg-cosmic { background: var(--paper); }
 
-/* ── Glow Effects ───────────────────────────────────────────────────────── */
-.glow-blue { filter: drop-shadow(0 0 12px rgba(77,136,255,0.5)); }
-.glow-green { filter: drop-shadow(0 0 12px rgba(16,185,129,0.5)); }
-.glow-amber { filter: drop-shadow(0 0 12px rgba(245,158,11,0.5)); }
-.glow-rose { filter: drop-shadow(0 0 12px rgba(244,63,94,0.5)); }
-.glow-purple { filter: drop-shadow(0 0 12px rgba(168,85,247,0.5)); }
+/* ── Glow helpers (kept for API compatibility, now subtle) ───────────── */
+.glow-blue   { filter: drop-shadow(0 0 8px rgba(15,169,104,.28)); }
+.glow-green  { filter: drop-shadow(0 0 8px rgba(15,169,104,.28)); }
+.glow-amber  { filter: drop-shadow(0 0 8px rgba(217,146,43,.30)); }
+.glow-rose   { filter: drop-shadow(0 0 8px rgba(194,69,63,.28)); }
+.glow-purple { filter: drop-shadow(0 0 8px rgba(15,169,104,.28)); }
 
-/* ── Number shimmer ─────────────────────────────────────────────────────── */
 .stat-number {
-  background: linear-gradient(90deg, #f0f4ff 0%, #a5c8ff 50%, #f0f4ff 100%);
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer 4s linear infinite;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  letter-spacing: -.035em;
+  color: inherit;
 }
 
-/* ── Table ──────────────────────────────────────────────────────────────── */
+/* ── Table ───────────────────────────────────────────────────────────── */
 .glass-table { @apply w-full; }
-.glass-table thead tr { border-bottom: 1px solid rgba(255,255,255,0.08); }
+.glass-table thead tr { border-bottom: 1px solid var(--line); }
 .glass-table th {
-  @apply text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-white/40;
+  @apply text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider;
+  color: var(--faint);
 }
-.glass-table tbody tr {
-  @apply transition-all duration-150;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-}
-.glass-table tbody tr:hover { background: rgba(255,255,255,0.03); }
-.glass-table td { @apply py-3 px-4 text-sm text-white/80; }
+.glass-table tbody tr { @apply transition-all duration-150; border-bottom: 1px solid var(--line-2); }
+.glass-table tbody tr:hover { background: var(--wash-2); }
+.glass-table td { @apply py-3 px-4 text-sm; color: var(--fg); }
 
-/* ── Notification dot ───────────────────────────────────────────────────── */
+/* ── Notification dot ────────────────────────────────────────────────── */
 .notif-dot {
-  @apply w-2 h-2 rounded-full bg-rose-500 absolute -top-0.5 -right-0.5;
-  box-shadow: 0 0 8px rgba(244,63,94,0.8);
-  animation: pulse 2s infinite;
+  @apply w-2 h-2 rounded-full absolute -top-0.5 -right-0.5;
+  background: var(--gold);
+  box-shadow: 0 0 0 2px #fff;
 }
 
-/* ── Control Tower ──────────────────────────────────────────────────────── */
-/* The agent's trace is one continuous line of reasoning, so it's drawn as one
-   continuous line. Everything here is prefixed ct- and scoped to its own
-   selectors — no @apply — so it can't collide with the .glass/.badge system. */
+/* ══════════════════════════════════════════════════════════════════════
+   Control Tower — the agent's trace.
 
+   One continuous rail down the left, because the trace is one continuous
+   line of reasoning. The rail BREAKS — dashed, gold — at the exact point
+   the agent handed control to a person. That break is the whole argument
+   of this project, so it is the only thing here allowed to glow.
+   ══════════════════════════════════════════════════════════════════════ */
 .ct-rail {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: rgba(255, 255, 255, 0.11);
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 1.5px; background: var(--line);
 }
-
-/* The break. Where the agent handed control back, the line stops being a line. */
 .ct-rail-open {
   background: repeating-linear-gradient(
     to bottom,
-    rgba(245, 158, 11, 0.85) 0px,
-    rgba(245, 158, 11, 0.85) 3px,
-    transparent 3px,
-    transparent 9px
+    var(--gold) 0px, var(--gold) 3px,
+    transparent 3px, transparent 9px
   );
 }
-
 .ct-node {
-  position: absolute;
-  left: -3.5px;
-  top: 6px;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--bg-primary);
-  border: 1.5px solid currentColor;
+  position: absolute; left: -3.5px; top: 5px;
+  width: 8px; height: 8px; border-radius: 999px;
+  background: #fff; border: 2px solid currentColor;
 }
+.ct-node-live { box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent); }
 
-.ct-node-live {
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
-}
-
-/* Latency, drawn to scale. A 12ms lookup and a 2.8s model turn should not look
-   the same, and in a trace where the machine's own thinking is the slow part,
-   that difference is the story. */
+/* Latency drawn to scale: a 13ms lookup and an 18s ranking call must not
+   look alike, and in this system the slow step is a tool, not the model. */
 .ct-cost {
-  height: 2px;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.5;
-  min-width: 3px;
-  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
+  height: 2.5px; border-radius: 999px; background: currentColor;
+  opacity: .45; min-width: 3px;
+  transition: width 500ms cubic-bezier(.22,1,.36,1);
 }
-
 .ct-kind {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px; font-weight: 500;
+  letter-spacing: .12em; text-transform: uppercase;
 }
+.ct-mono { font-family: 'JetBrains Mono', monospace; font-variant-ligatures: none; }
 
-.ct-mono {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-variant-ligatures: none;
-}
-
-/* The one thing on this page allowed to glow. */
 .ct-waiting {
-  border: 1px solid rgba(245, 158, 11, 0.32);
-  background:
-    radial-gradient(ellipse at 12% 0%, rgba(245, 158, 11, 0.10) 0%, transparent 62%),
-    rgba(245, 158, 11, 0.035);
-  animation: ct-breathe 4.5s ease-in-out infinite;
+  border: 1px solid var(--gold-ln);
+  background: var(--card);
+  box-shadow: 0 8px 26px rgba(217,146,43,.12);
 }
-
-@keyframes ct-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.16), 0 10px 40px rgba(0,0,0,0.4); }
-  50%      { box-shadow: 0 0 34px 2px rgba(245, 158, 11, 0.14), 0 10px 40px rgba(0,0,0,0.4); }
-}
-
 .ct-live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--accent-green);
-  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
-  animation: ct-ping 1.8s ease-out infinite;
+  width: 6px; height: 6px; border-radius: 999px;
+  background: var(--jade); display: inline-block;
+  animation: ct-ping 1.9s ease-out infinite;
 }
-
+.ct-gold-dot { background: var(--gold); animation-name: ct-ping-gold; }
 @keyframes ct-ping {
-  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
-  70%  { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(15,169,104,.5); }
+  70%  { box-shadow: 0 0 0 7px rgba(15,169,104,0); }
+  100% { box-shadow: 0 0 0 0 rgba(15,169,104,0); }
 }
-
+@keyframes ct-ping-gold {
+  0%   { box-shadow: 0 0 0 0 rgba(217,146,43,.5); }
+  70%  { box-shadow: 0 0 0 7px rgba(217,146,43,0); }
+  100% { box-shadow: 0 0 0 0 rgba(217,146,43,0); }
+}
 .ct-disclosure {
-  max-height: 260px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+  max-height: 260px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
 }
 
-:focus-visible {
-  outline: 2px solid rgba(77, 136, 255, 0.75);
-  outline-offset: 2px;
-}
+:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .ct-waiting,
-  .ct-live-dot { animation: none; }
+  .ct-live-dot, .animate-pulse { animation: none !important; }
   .ct-cost { transition: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   MIGRATION SHIM — temporary.
+
+   The pages were written against the old dark theme and carry ~200
+   hardcoded `text-white/40`-style utilities inline. Rather than leave
+   half the app with white text on a white page while those get converted
+   screen by screen, these remap the dark-theme utilities onto the light
+   palette. Delete each rule as its pages are converted for real; the
+   whole block should eventually go.
+   ══════════════════════════════════════════════════════════════════════ */
+@layer utilities {
+  .text-white      { color: var(--fg) !important; }
+  .text-white\/90  { color: var(--fg) !important; }
+  .text-white\/80  { color: #23312D !important; }
+  .text-white\/75  { color: #2C3A36 !important; }
+  .text-white\/70  { color: var(--ash) !important; }
+  .text-white\/60  { color: var(--ash) !important; }
+  .text-white\/50  { color: var(--faint) !important; }
+  .text-white\/45  { color: var(--faint) !important; }
+  .text-white\/40  { color: var(--faint) !important; }
+  .text-white\/35  { color: var(--faint) !important; }
+  .text-white\/30  { color: var(--ghost) !important; }
+  .text-white\/25  { color: var(--ghost) !important; }
+  .text-white\/20  { color: var(--ghost) !important; }
+  .text-white\/15  { color: var(--ghost) !important; }
+  .text-white\/10  { color: var(--ghost) !important; }
+
+  .bg-white\/\[0\.02\] { background-color: var(--wash-2) !important; }
+  .bg-white\/\[0\.03\] { background-color: var(--wash-2) !important; }
+  .bg-white\/\[0\.04\] { background-color: var(--wash-2) !important; }
+  .bg-white\/\[0\.05\] { background-color: var(--wash) !important; }
+  .bg-white\/\[0\.06\] { background-color: var(--wash) !important; }
+  .bg-white\/\[0\.08\] { background-color: var(--wash) !important; }
+  .bg-white\/\[0\.09\] { background-color: var(--wash) !important; }
+  .bg-white\/\[0\.12\] { background-color: var(--wash) !important; }
+
+  .border-white\/10       { border-color: var(--line) !important; }
+  .border-white\/20       { border-color: var(--line) !important; }
+  .border-white\/30       { border-color: var(--ghost) !important; }
+  .border-white\/\[0\.03\]{ border-color: var(--line-2) !important; }
+  .border-white\/\[0\.04\]{ border-color: var(--line-2) !important; }
+  .border-white\/\[0\.05\]{ border-color: var(--line-2) !important; }
+  .border-white\/\[0\.06\]{ border-color: var(--line-2) !important; }
+  .border-white\/\[0\.07\]{ border-color: var(--line) !important; }
+  .border-white\/\[0\.08\]{ border-color: var(--line) !important; }
+  .border-white\/\[0\.1\] { border-color: var(--line) !important; }
+  .border-white\/\[0\.16\]{ border-color: var(--line) !important; }
+  .border-white\/\[0\.18\]{ border-color: var(--line) !important; }
+
+  /* Old accent text colours → jade, so nothing still reads as blue/purple. */
+  .text-blue-300, .text-blue-400, .text-purple-300, .text-purple-400,
+  .text-cyan-300, .text-cyan-400 { color: var(--jade-d) !important; }
+  .text-emerald-300, .text-emerald-400, .text-green-400 { color: var(--jade-d) !important; }
+  .text-amber-300, .text-amber-400, .text-yellow-400 { color: var(--gold-d) !important; }
+  .text-rose-300, .text-rose-400, .text-red-400 { color: #98332E !important; }
+
+  .bg-blue-400, .bg-blue-500 { background-color: var(--jade) !important; }
+  .bg-purple-400, .bg-purple-500 { background-color: var(--jade-mid) !important; }
+  .bg-cyan-400 { background-color: var(--jade-mid) !important; }
+  .bg-emerald-400, .bg-green-400 { background-color: var(--jade) !important; }
+  .bg-amber-400 { background-color: var(--gold) !important; }
+  .bg-rose-400, .bg-rose-500 { background-color: var(--rose) !important; }
 }
