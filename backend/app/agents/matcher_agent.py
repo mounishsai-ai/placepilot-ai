@@ -1,9 +1,10 @@
 """
 Matcher Agent — embeds student profiles + JD, finds top-k matches via ChromaDB.
 
-Embeddings go straight to the Gemini REST API (bypassing langchain-google-genai,
-which hangs 60s -> 504 on every embedding model under this project's pinned
-version). Falls back to TF-IDF if the REST call fails.
+Embeddings go straight to Vertex AI's REST :predict endpoint (project-billed
+quota, not the free per-API-key quota) — the free-tier generativelanguage.
+googleapis.com path was hitting 429s at ~8 rapid batches/minute in production.
+Falls back to TF-IDF if the REST call fails.
 """
 import asyncio
 import math
@@ -11,39 +12,56 @@ from typing import Any
 from collections import Counter
 import chromadb
 import httpx
+import google.auth
+import google.auth.transport.requests as ga_requests
 from chromadb.config import Settings as ChromaSettings
 from app.config import settings
 from app.agents.jd_analyst import explain_match
 from loguru import logger
 
-GEMINI_EMBED_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents"
+VERTEX_EMBED_URL = (
+    "https://{location}-aiplatform.googleapis.com/v1/projects/{project}"
+    "/locations/{location}/publishers/google/models/{model}:predict"
 )
+
+_credentials = None
+_auth_request = None
+
+
+def _get_vertex_access_token() -> str:
+    """Cache+refresh an ADC token (Cloud Run's default service account locally)."""
+    global _credentials, _auth_request
+    if _credentials is None:
+        _credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        _auth_request = ga_requests.Request()
+    if not _credentials.valid:
+        _credentials.refresh(_auth_request)
+    return _credentials.token
 
 
 async def _embed_texts_rest(texts: list[str], task_type: str) -> list[list[float]]:
-    """Embed a batch of texts via direct Gemini REST call (batchEmbedContents).
+    """Embed a batch of texts via Vertex AI's :predict endpoint.
 
     task_type must be RETRIEVAL_DOCUMENT for indexed content (student profiles)
     or RETRIEVAL_QUERY for the search query (the JD) — matching is asymmetric.
     """
     model = settings.EMBEDDING_MODEL
-    url = GEMINI_EMBED_URL.format(model=model)
+    url = VERTEX_EMBED_URL.format(
+        location=settings.VERTEX_EMBEDDING_LOCATION,
+        project=settings.GCP_PROJECT_ID,
+        model=model,
+    )
+    token = _get_vertex_access_token()
     payload = {
-        "requests": [
-            {
-                "model": f"models/{model}",
-                "content": {"parts": [{"text": t}]},
-                "task_type": task_type,
-            }
-            for t in texts
-        ]
+        "instances": [{"content": t, "task_type": task_type} for t in texts]
     }
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(url, params={"key": settings.GEMINI_API_KEY}, json=payload)
+        resp = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json=payload)
         resp.raise_for_status()
         data = resp.json()
-        return [e["values"] for e in data["embeddings"]]
+        return [p["embeddings"]["values"] for p in data["predictions"]]
 
 
 def get_chroma_client():
@@ -169,10 +187,10 @@ async def index_students_for_drive(
         for s in students
     ]
 
-    # Direct REST embedding is ~1s regardless of batch size (verified against
-    # the live API) — batches of 20 keep individual requests small without the
-    # old 5-per-batch / 60s-timeout workaround that langchain needed.
-    BATCH_SIZE = 20
+    # Vertex accepted all 201 students in a single :predict call in ~9s when
+    # tested live — batches of 200 mean a typical drive needs just 1-2 calls
+    # instead of the 11 that used to blow through the per-minute quota.
+    BATCH_SIZE = 200
     embedded_ok = True
     for i in range(0, len(texts), BATCH_SIZE):
         batch_texts = texts[i: i + BATCH_SIZE]
