@@ -68,9 +68,9 @@ const STATUS_COLOR: Record<string, string> = {
 
 const STATUS_LABEL: Record<string, string> = {
   draft:               "Draft",
-  jd_analyzed:         "JD Analyzed",
-  eligibility_checked: "Eligibility Done",
-  matched:             "Candidates Ranked",
+  jd_analyzed:         "🧠 Analyzing JD…",
+  eligibility_checked: "✅ Checking Eligibility…",
+  matched:             "🔍 Ranking Candidates…",
   shortlist_pending:   "⏸ Awaiting Approval",
   shortlist_approved:  "Shortlist Approved",
   schedule_pending:    "⏸ Schedule Review",
@@ -117,16 +117,23 @@ function stepStatus(driveStatus: string, stepKey: string): "done" | "active" | "
 
 // ─── Pipeline Timeline Component ─────────────────────────────────────────────
 
+const AI_PROCESSING_STEPS = ["jd_analyzed", "eligibility_checked", "matched"];
+
 function PipelineTimeline({ status }: { status: string }) {
+  const isLiveProcessing = AI_PROCESSING_STEPS.includes(status);
   return (
     <div className="flex items-center gap-0 mt-4 overflow-x-auto pb-1">
       {PIPELINE_STEPS.map((step, i) => {
         const s = stepStatus(status, step.key);
         const Icon = step.icon;
+        const pulsing = s === "active" && isLiveProcessing;
         return (
           <div key={step.key} className="flex items-center">
             <div className="flex flex-col items-center gap-1 min-w-[72px]">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+              <motion.div
+                animate={pulsing ? { scale: [1, 1.18, 1], opacity: [1, 0.65, 1] } : {}}
+                transition={pulsing ? { duration: 1.3, repeat: Infinity, ease: "easeInOut" } : {}}
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                 s === "done"   ? "bg-emerald-500/20 border border-emerald-500/50" :
                 s === "active" ? "bg-blue-500/20 border border-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.4)]" :
                                  "bg-white/[0.03] border border-white/10"
@@ -135,7 +142,7 @@ function PipelineTimeline({ status }: { status: string }) {
                   s === "done" ? "text-emerald-400" :
                   s === "active" ? "text-blue-400" : "text-white/20"
                 } />
-              </div>
+              </motion.div>
               <span className={`text-[9px] text-center leading-tight ${
                 s === "done" ? "text-emerald-400" :
                 s === "active" ? "text-blue-400 font-semibold" : "text-white/20"
@@ -580,6 +587,23 @@ function DriveCard({
   const [fetchedEvents, setFetchedEvents] = useState<AgentEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
 
+  // The DB status only jumps twice (draft → jd_analyzed → shortlist_pending) —
+  // the whole JD/eligibility/matching run hides behind one static "jd_analyzed" value.
+  // Use the live WS event stream to show which of those 3 steps is actually active right now.
+  const EVENT_TO_STEP: Record<string, string> = {
+    pipeline_started:   "jd_analyzed",
+    jd_analyzed:        "jd_analyzed",
+    eligibility_checked: "eligibility_checked",
+    matching_complete:  "matched",
+  };
+  const latestStepEvent = liveEvents.find((e) => EVENT_TO_STEP[e.event_type]);
+  const liveStep = latestStepEvent ? EVENT_TO_STEP[latestStepEvent.event_type] : undefined;
+  const isRunning = drive.status === "jd_analyzed"; // still mid-background-run in DB terms
+  const effectiveStatus =
+    isRunning && liveStep && MASTER_ORDER.indexOf(liveStep) > MASTER_ORDER.indexOf(drive.status)
+      ? liveStep
+      : drive.status;
+
   const loadEvents = async () => {
     if (fetchedEvents.length > 0) return;
     setLoadingEvents(true);
@@ -636,8 +660,15 @@ function DriveCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-1 flex-wrap">
             <h3 className="text-white font-semibold text-base truncate max-w-md">{drive.title}</h3>
-            <span className={`badge text-[10px] ${STATUS_COLOR[drive.status] ?? "badge-gray"}`}>
-              {STATUS_LABEL[drive.status] ?? drive.status}
+            <span className={`badge text-[10px] inline-flex items-center gap-1.5 ${STATUS_COLOR[effectiveStatus] ?? "badge-gray"}`}>
+              {isRunning && (
+                <motion.span
+                  animate={{ opacity: [1, 0.3, 1] }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                  className="w-1.5 h-1.5 rounded-full bg-blue-400"
+                />
+              )}
+              {STATUS_LABEL[effectiveStatus] ?? effectiveStatus}
             </span>
           </div>
           <div className="flex items-center gap-4 text-white/40 text-xs flex-wrap">
@@ -719,7 +750,7 @@ function DriveCard({
       </div>
 
       {/* Pipeline timeline */}
-      <PipelineTimeline status={drive.status} />
+      <PipelineTimeline status={effectiveStatus} />
 
       {/* Expanded events */}
       <AnimatePresence>
@@ -833,6 +864,10 @@ export default function DrivesPage() {
   const handleRunPipeline = async (id: string) => {
     try {
       await drivesAPI.runPipeline(id);
+      // Flip the badge/timeline to "running" instantly instead of waiting on the next poll —
+      // the backend sets this status synchronously before the (slow) AI calls even start.
+      setDrives((prev) => prev.map((d) => (d.id === id ? { ...d, status: "jd_analyzed" } : d)));
+      setPollingActive(true);
       toast.success("🚀 Pipeline started! Watch agent events below...", { duration: 4000 });
       setTimeout(fetchDrives, 2000);
     } catch (err: unknown) {

@@ -17,8 +17,14 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.5-flash-lite"      # 500 RPD, 15 RPM — primary workhorse
-    GEMINI_MODEL_PRO: str = "gemini-3.6-flash"           # 20 RPD — high-quality JD analysis only
+    GEMINI_MODEL_PRO: str = "gemini-3.5-flash"           # high-quality JD analysis; gemini-3.6-flash measured ~27s/call vs ~5.7s here
     EMBEDDING_MODEL: str = "gemini-embedding-001"
+
+    # Vertex AI — used only for embeddings (project-billed quota, no per-key 429s;
+    # see backend/.gcp_project.env for how this was verified). JD analysis / match
+    # explanations stay on the AI Studio key path — low volume, not currently rate-limited.
+    GCP_PROJECT_ID: str = "placement-agent-22587"
+    VERTEX_EMBEDDING_LOCATION: str = "us-central1"
 
     CHROMA_PERSIST_DIR: str = "./chroma_db"
 

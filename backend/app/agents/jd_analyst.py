@@ -1,12 +1,21 @@
 """
 JD Analyst Agent — uses Gemini to extract structured info from a job description.
+
+Calls Gemini directly via REST (same pattern matcher_agent.py already uses for
+embeddings) instead of langchain-google-genai, which is documented there to
+hang ~60s and then 504 under this project's pinned version. That hang is what
+was silently stalling generate_all_explanations mid-pipeline.
 """
+import asyncio
 import json
 from typing import Any
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage, SystemMessage
+import httpx
 from app.config import settings
 from loguru import logger
+
+GEMINI_GENERATE_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+)
 
 JD_SYSTEM_PROMPT = """You are an expert HR analyst AI. 
 Your job is to extract structured information from job descriptions provided by companies for campus placements.
@@ -32,14 +41,40 @@ Extract the following fields:
 """
 
 
-def get_llm(pro: bool = False):
-    """Use pro model for JD parsing (quality critical), lite for everything else."""
+async def _generate_content(
+    prompt: str,
+    system_prompt: str | None = None,
+    pro: bool = False,
+    temperature: float = 0.1,
+    retries: int = 2,
+) -> str:
+    """Call Gemini generateContent directly via REST, with retry on transient failure.
+
+    Use pro model for JD parsing (quality critical), lite for everything else.
+    """
     model = settings.GEMINI_MODEL_PRO if pro else settings.GEMINI_MODEL
-    return ChatGoogleGenerativeAI(
-        model=model,
-        google_api_key=settings.GEMINI_API_KEY,
-        temperature=0.1,
-    )
+    url = GEMINI_GENERATE_URL.format(model=model)
+    payload: dict[str, Any] = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": temperature},
+    }
+    if system_prompt:
+        payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+
+    for attempt in range(retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(url, params={"key": settings.GEMINI_API_KEY}, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:
+            if attempt < retries:
+                wait = 2 ** attempt
+                logger.warning(f"Gemini generateContent attempt {attempt+1} failed: {e}. Retrying in {wait}s...")
+                await asyncio.sleep(wait)
+            else:
+                raise
 
 
 async def analyze_jd(jd_text: str) -> dict[str, Any]:
@@ -47,15 +82,13 @@ async def analyze_jd(jd_text: str) -> dict[str, Any]:
     Parse a raw JD text and return a structured JSON dict.
     Falls back to a rule-based extractor if LLM fails.
     """
-    llm = get_llm(pro=True)  # JD parsing = quality critical → use pro model
-    messages = [
-        SystemMessage(content=JD_SYSTEM_PROMPT),
-        HumanMessage(content=f"Extract information from this Job Description:\n\n{jd_text}"),
-    ]
-
     try:
-        response = await llm.ainvoke(messages)
-        text = response.content.strip()
+        text = await _generate_content(
+            prompt=f"Extract information from this Job Description:\n\n{jd_text}",
+            system_prompt=JD_SYSTEM_PROMPT,
+            pro=True,  # JD parsing = quality critical → use pro model
+        )
+        text = text.strip()
         # strip possible markdown code fences
         if text.startswith("```"):
             text = text.split("```")[1]
@@ -109,7 +142,6 @@ async def generate_skill_gap_advice(
     role: str,
 ) -> str:
     """Generate personalised skill-gap advice for a student."""
-    llm = get_llm()
     missing_required = [s for s in required_skills if s.lower() not in [x.lower() for x in student_skills]]
     missing_preferred = [s for s in preferred_skills if s.lower() not in [x.lower() for x in student_skills]]
 
@@ -120,8 +152,8 @@ Preferred skills they could add: {missing_preferred}.
 Write a concise, actionable skill-gap analysis (3-5 bullet points) with specific learning resources or timelines.
 Be encouraging but realistic. Format as plain text, not JSON."""
 
-    response = await llm.ainvoke([HumanMessage(content=prompt)])
-    return response.content.strip()
+    text = await _generate_content(prompt=prompt)
+    return text.strip()
 
 
 async def explain_match(
@@ -130,7 +162,6 @@ async def explain_match(
     score: float,
 ) -> dict:
     """Generate a human-readable explanation for why a student matched (or didn't)."""
-    llm = get_llm()
     prompt = f"""You are helping a placement officer understand why a student was matched to a job.
 
 Student profile:
@@ -155,8 +186,8 @@ Provide a JSON response with:
 - one_liner: single sentence summary for the dashboard
 """
     try:
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
-        text = response.content.strip()
+        text = await _generate_content(prompt=prompt)
+        text = text.strip()
         if text.startswith("```"):
             text = text.split("```")[1]
             if text.startswith("json"):
