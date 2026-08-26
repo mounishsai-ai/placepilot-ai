@@ -312,3 +312,56 @@ class AgentEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     drive = relationship("PlacementDrive", back_populates="agent_events")
+
+
+# ─── Agentic Orchestrator (new — additive, does not touch AgentEvent above) ──
+# AgentEvent (above) stays exactly as-is: the old supervisor.py pipeline and the
+# existing dashboard's "Agent Activity Log" both depend on its exact shape.
+# The orchestrator's structured reasoning trace lives in its own tables instead
+# of growing new bare columns onto a table already live in production.
+
+class AgentRunStatus(str, enum.Enum):
+    RUNNING = "running"
+    PAUSED = "paused"          # suspended on an ask_human tool call
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AgentRun(Base):
+    """One durable orchestrator run. Survives container recycling —
+    the thing that makes ask_human a real pause/resume, not just a demo."""
+    __tablename__ = "agent_runs"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    drive_id = Column(String, ForeignKey("placement_drives.id"), nullable=False, index=True)
+    status = Column(SAEnum(AgentRunStatus), default=AgentRunStatus.RUNNING, nullable=False)
+    state_json = Column(JSON)                        # full conversation/tool-call history so far
+    pending_question = Column(JSON, nullable=True)    # {"question": ..., "options": [...]} while PAUSED
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    drive = relationship("PlacementDrive")
+    trace = relationship(
+        "AgentTrace", back_populates="run",
+        cascade="all, delete-orphan", order_by="AgentTrace.seq",
+    )
+
+
+class AgentTrace(Base):
+    """One entry in the live trace register — the schema from
+    AGENTIC_OVERHAUL.md §6 Step 1. This is what the trace UI renders."""
+    __tablename__ = "agent_trace"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    run_id = Column(String, ForeignKey("agent_runs.id"), nullable=False, index=True)
+    drive_id = Column(String, ForeignKey("placement_drives.id"), nullable=False, index=True)
+    seq = Column(Integer, nullable=False)
+    agent = Column(String, nullable=False)     # orchestrator | sourcing | logistics | comms | auditor
+    kind = Column(String, nullable=False)      # thought | tool_call | observation | decision
+                                                # | violation | replan | ask_human | handoff
+    summary = Column(Text, nullable=False)     # one line, human-readable
+    detail = Column(JSON)                      # tool name, args, raw result
+    confidence = Column(Float, nullable=True)
+    cost_ms = Column(Integer, nullable=True)
+    tokens = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    run = relationship("AgentRun", back_populates="trace")

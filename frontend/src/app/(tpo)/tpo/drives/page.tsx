@@ -4,8 +4,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Briefcase, Play, CheckCircle, Clock, AlertTriangle,
   ChevronDown, ChevronUp, Users, Star, X, Check,
-  Building2, Calendar, TrendingUp, Zap, Search,
+  Building2, Calendar, TrendingUp, Zap, Search, Radio,
 } from "lucide-react";
+import Link from "next/link";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import { drivesAPI, scheduleAPI } from "@/lib/api";
@@ -686,6 +687,13 @@ function DriveCard({
 
         {/* Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          <Link
+            href={`/tpo/drives/${drive.id}/agent`}
+            className="btn-ghost text-xs flex items-center gap-1.5 !py-1.5 !px-3"
+            title="Watch the agent decide each step"
+          >
+            <Radio size={13} /> Control Tower
+          </Link>
           {drive.status === "draft" && (
             <button
               onClick={() => onRunPipeline(drive.id)}

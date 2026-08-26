@@ -56,6 +56,17 @@ export const drivesAPI = {
   restore: (id: string) => api.patch(`/api/drives/${id}/restore`),
 };
 
+// ─── Agent (orchestrator) ─────────────────────────────────────────────────
+// Separate from drivesAPI.runPipeline above — that drives the old hardcoded
+// graph. These hit the orchestrator, where the model picks each step itself.
+export const agentAPI = {
+  start: (driveId: string) => api.post(`/api/drives/${driveId}/run-agent`),
+  listRuns: (driveId: string) => api.get(`/api/drives/${driveId}/agent-runs`),
+  getRun: (runId: string) => api.get(`/api/drives/agent-runs/${runId}`),
+  answer: (runId: string, answer: string) =>
+    api.post(`/api/drives/agent-runs/${runId}/answer`, { answer }),
+};
+
 // ─── Students ─────────────────────────────────────────────────────────────
 export const studentsAPI = {
   list: (params?: object) => api.get("/api/students/", { params }),

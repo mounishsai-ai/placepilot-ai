@@ -12,33 +12,16 @@ from typing import Any
 from collections import Counter
 import chromadb
 import httpx
-import google.auth
-import google.auth.transport.requests as ga_requests
 from chromadb.config import Settings as ChromaSettings
 from app.config import settings
 from app.agents.jd_analyst import explain_match
+from app.agents.vertex_auth import get_vertex_access_token
 from loguru import logger
 
 VERTEX_EMBED_URL = (
     "https://{location}-aiplatform.googleapis.com/v1/projects/{project}"
     "/locations/{location}/publishers/google/models/{model}:predict"
 )
-
-_credentials = None
-_auth_request = None
-
-
-def _get_vertex_access_token() -> str:
-    """Cache+refresh an ADC token (Cloud Run's default service account locally)."""
-    global _credentials, _auth_request
-    if _credentials is None:
-        _credentials, _ = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        _auth_request = ga_requests.Request()
-    if not _credentials.valid:
-        _credentials.refresh(_auth_request)
-    return _credentials.token
 
 
 async def _embed_texts_rest(texts: list[str], task_type: str) -> list[list[float]]:
@@ -53,7 +36,7 @@ async def _embed_texts_rest(texts: list[str], task_type: str) -> list[list[float
         project=settings.GCP_PROJECT_ID,
         model=model,
     )
-    token = _get_vertex_access_token()
+    token = get_vertex_access_token()
     payload = {
         "instances": [{"content": t, "task_type": task_type} for t in texts]
     }

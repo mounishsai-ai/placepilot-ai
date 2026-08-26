@@ -3,6 +3,7 @@ from app.models.models import (
     PlacementDrive, EligibilityRule, EligibilityResult,
     MatchScore, Room, PanelMember, PanelAvailability,
     InterviewRound, InterviewSlot, Notification, AgentEvent,
+    AgentRun, AgentRunStatus, AgentTrace,
     UserRole, DriveStatus, SlotStatus, NotificationChannel, RoundType
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "PlacementDrive", "EligibilityRule", "EligibilityResult",
     "MatchScore", "Room", "PanelMember", "PanelAvailability",
     "InterviewRound", "InterviewSlot", "Notification", "AgentEvent",
+    "AgentRun", "AgentRunStatus", "AgentTrace",
     "UserRole", "DriveStatus", "SlotStatus", "NotificationChannel", "RoundType"
 ]

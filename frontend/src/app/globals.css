@@ -284,3 +284,115 @@ body {
   box-shadow: 0 0 8px rgba(244,63,94,0.8);
   animation: pulse 2s infinite;
 }
+
+/* ── Control Tower ──────────────────────────────────────────────────────── */
+/* The agent's trace is one continuous line of reasoning, so it's drawn as one
+   continuous line. Everything here is prefixed ct- and scoped to its own
+   selectors — no @apply — so it can't collide with the .glass/.badge system. */
+
+.ct-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+/* The break. Where the agent handed control back, the line stops being a line. */
+.ct-rail-open {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(245, 158, 11, 0.85) 0px,
+    rgba(245, 158, 11, 0.85) 3px,
+    transparent 3px,
+    transparent 9px
+  );
+}
+
+.ct-node {
+  position: absolute;
+  left: -3.5px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-primary);
+  border: 1.5px solid currentColor;
+}
+
+.ct-node-live {
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+}
+
+/* Latency, drawn to scale. A 12ms lookup and a 2.8s model turn should not look
+   the same, and in a trace where the machine's own thinking is the slow part,
+   that difference is the story. */
+.ct-cost {
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.5;
+  min-width: 3px;
+  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ct-kind {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ct-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-ligatures: none;
+}
+
+/* The one thing on this page allowed to glow. */
+.ct-waiting {
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(245, 158, 11, 0.10) 0%, transparent 62%),
+    rgba(245, 158, 11, 0.035);
+  animation: ct-breathe 4.5s ease-in-out infinite;
+}
+
+@keyframes ct-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.16), 0 10px 40px rgba(0,0,0,0.4); }
+  50%      { box-shadow: 0 0 34px 2px rgba(245, 158, 11, 0.14), 0 10px 40px rgba(0,0,0,0.4); }
+}
+
+.ct-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-green);
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  animation: ct-ping 1.8s ease-out infinite;
+}
+
+@keyframes ct-ping {
+  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+  70%  { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.ct-disclosure {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(77, 136, 255, 0.75);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ct-waiting,
+  .ct-live-dot { animation: none; }
+  .ct-cost { transition: none; }
+}
