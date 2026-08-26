@@ -1,0 +1,12 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+chroma_db/
+uploads/
+.env
+.env.example
+install.log
+.git/
+.gitignore
+*.md

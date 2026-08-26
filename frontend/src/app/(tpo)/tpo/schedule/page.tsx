@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { motion } from "framer-motion";
 import { Calendar, Clock, Users, CheckCircle, AlertTriangle, Plus, Building2, ChevronDown, ChevronUp, Archive } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
@@ -121,6 +121,14 @@ function DriveScheduleCard({ group, highlight }: { group: DriveGroup; highlight:
 }
 
 export default function SchedulePage() {
+  return (
+    <Suspense fallback={null}>
+      <SchedulePageInner />
+    </Suspense>
+  );
+}
+
+function SchedulePageInner() {
   const searchParams = useSearchParams();
   const highlightDriveId = searchParams.get("drive") ?? "";
 
