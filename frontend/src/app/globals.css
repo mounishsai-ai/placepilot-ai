@@ -175,32 +175,25 @@ h1 em, h2 em, h3 em, .hl {
     box-shadow: 0 0 0 3px rgba(15,169,104,.13);
   }
 
-  /* ── Stat cards — ink under the text, jade everywhere else ─────────── */
-  /* The number and its label sit bottom-left, so that corner stays near-black
-     and the green is pushed up and right where nothing has to stay legible. */
-  .metric-card, .stat-dark {
+  /* ── Stat cards — ink from the top-left, green arriving bottom-right ── */
+  /* The icon, number and label all run down the left edge, so the darkness
+     covers the top-left and the whole left half; green is confined to the
+     bottom-right corner where nothing has to stay legible. Every card gets
+     the same treatment — no card is singled out with a brighter fill. */
+  .metric-card, .stat-dark, .stat-hero {
     @apply relative overflow-hidden rounded-2xl p-5;
     background:
-      radial-gradient(130% 105% at 6% 100%, var(--ink) 0%, rgba(4,18,13,.86) 26%, transparent 62%),
-      linear-gradient(28deg, #061C14 0%, #0A3B28 46%, #12613F 100%);
+      radial-gradient(95% 85% at 100% 100%, rgba(52,216,154,.40) 0%, transparent 62%),
+      linear-gradient(135deg, var(--ink) 0%, #072418 54%, #0E5537 100%);
     color: #EAF6F1;
     box-shadow: 0 3px 16px rgba(4,18,13,.22);
   }
-  .metric-card::after, .stat-dark::after {
+  .metric-card::after, .stat-dark::after, .stat-hero::after {
     content: '';
     @apply absolute inset-0 pointer-events-none;
-    background: radial-gradient(105% 80% at 100% 0%, rgba(52,216,154,.34) 0%, transparent 60%);
+    background: radial-gradient(120% 95% at 0% 0%, rgba(4,18,13,.74) 0%, transparent 58%);
   }
-  .metric-card > *, .stat-dark > * { position: relative; z-index: 1; }
-
-  /* the agent's own headline number gets the bright card */
-  .stat-hero {
-    background: linear-gradient(142deg, #0C8F58 0%, var(--jade-mid) 52%, #2ACF8E 100%);
-    box-shadow: 0 3px 18px rgba(18,184,114,.30);
-  }
-  .stat-hero::after {
-    background: radial-gradient(115% 85% at 105% -10%, rgba(255,255,255,.22) 0%, transparent 58%);
-  }
+  .metric-card > *, .stat-dark > *, .stat-hero > * { position: relative; z-index: 1; }
 
   /* ── Pipeline tiles — lighter jade, white text still holds ─────────── */
   .tile {
@@ -386,6 +379,15 @@ h1 em, h2 em, h3 em, .hl {
    whole block should eventually go.
    ══════════════════════════════════════════════════════════════════════ */
 @layer utilities {
+  /* Dark surfaces are exempt from the remap below — on an ink card, white text
+     is correct and must survive. More specific than the bare `.text-white`
+     rule, so it wins despite both carrying !important. */
+  .metric-card .text-white,
+  .stat-dark .text-white,
+  .stat-hero .text-white,
+  .tile-done .text-white,
+  .tile-wait .text-white { color: #FFFFFF !important; }
+
   .text-white      { color: var(--fg) !important; }
   .text-white\/90  { color: var(--fg) !important; }
   .text-white\/80  { color: #23312D !important; }
