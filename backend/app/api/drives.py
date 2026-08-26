@@ -12,11 +12,13 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db, async_session_factory
 from app.models import (
     PlacementDrive, DriveStatus, Company, EligibilityRule,
-    EligibilityResult, MatchScore, Student, AgentEvent, UserRole, User
+    EligibilityResult, MatchScore, Student, AgentEvent, UserRole, User,
+    AgentRun, AgentRunStatus, AgentTrace,
 )
 from app.api.auth import get_current_user, require_role
 from app.api.websocket import emit_agent_event
 from app.agents.supervisor import run_placement_pipeline, resume_pipeline
+from app.agents import orchestrator
 from app.config import settings
 from loguru import logger
 import aiofiles
@@ -259,6 +261,121 @@ async def run_pipeline(
     drive.status = DriveStatus.JD_ANALYZED
     await db.commit()
     return {"message": "Pipeline started", "drive_id": drive_id}
+
+
+# ─── Agentic orchestrator (new, parallel path — does not touch run-pipeline) ──
+# Day-1 vertical slice: the model decides which tool to call and when, instead
+# of a hardcoded graph. Kept behind separate endpoints so /run-pipeline above
+# keeps working untouched while this gets proven out end-to-end.
+
+async def _run_agent_bg(run_id: str, drive_id: str):
+    """Runs in background with its OWN DB session (request session will be closed)."""
+    async with async_session_factory() as db:
+        try:
+            await orchestrator.execute_run(db, run_id, drive_id)
+        except Exception as e:
+            logger.error(f"Agent run {run_id} failed for drive {drive_id}: {e}")
+
+
+@router.post("/{drive_id}/run-agent")
+async def run_agent(
+    drive_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
+):
+    """Start an agentic orchestrator run for a drive (runs in background)."""
+    drive = await _get_drive_or_404(drive_id, db)
+    if not drive.jd_text:
+        raise HTTPException(status_code=400, detail="JD text is required before running the agent")
+
+    run = await orchestrator.create_run(db, drive_id)
+    background_tasks.add_task(_run_agent_bg, run.id, drive_id)
+    return {"message": "Agent run started", "drive_id": drive_id, "run_id": run.id}
+
+
+@router.get("/{drive_id}/agent-runs")
+async def list_agent_runs(
+    drive_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
+    """List agent runs for a drive, newest first — for finding a run_id to inspect/answer."""
+    result = await db.execute(
+        select(AgentRun).where(AgentRun.drive_id == drive_id).order_by(AgentRun.created_at.desc())
+    )
+    runs = result.scalars().all()
+    return [
+        {"id": r.id, "status": r.status.value, "pending_question": r.pending_question,
+         "created_at": r.created_at.isoformat()}
+        for r in runs
+    ]
+
+
+class AnswerRequest(BaseModel):
+    answer: str
+
+
+@router.post("/agent-runs/{run_id}/answer")
+async def answer_agent_run(
+    run_id: str,
+    body: AnswerRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
+):
+    """Answer a paused agent run's ask_human question and resume it."""
+    result = await db.execute(select(AgentRun).where(AgentRun.id == run_id))
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="agent run not found")
+    if run.status != AgentRunStatus.PAUSED:
+        raise HTTPException(status_code=400, detail=f"agent run is {run.status.value}, not paused")
+
+    async def _resume_bg():
+        async with async_session_factory() as bg_db:
+            try:
+                await orchestrator.resume_run(bg_db, run_id, body.answer)
+            except Exception as e:
+                logger.error(f"Agent run resume failed for {run_id}: {e}")
+
+    background_tasks.add_task(_resume_bg)
+    return {"message": "Answer received, resuming", "run_id": run_id}
+
+
+@router.get("/agent-runs/{run_id}")
+async def get_agent_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
+    """Inspect an agent run's status and full trace — for testing/debugging."""
+    result = await db.execute(select(AgentRun).where(AgentRun.id == run_id))
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="agent run not found")
+
+    trace_result = await db.execute(
+        select(AgentTrace).where(AgentTrace.run_id == run_id).order_by(AgentTrace.seq)
+    )
+    trace = trace_result.scalars().all()
+
+    return {
+        "id": run.id,
+        "drive_id": run.drive_id,
+        "status": run.status.value,
+        "pending_question": run.pending_question,
+        "created_at": run.created_at.isoformat(),
+        "updated_at": run.updated_at.isoformat(),
+        "trace": [
+            {
+                "seq": t.seq, "agent": t.agent, "kind": t.kind,
+                "summary": t.summary, "detail": t.detail,
+                "cost_ms": t.cost_ms, "created_at": t.created_at.isoformat(),
+            }
+            for t in trace
+        ],
+    }
 
 
 @router.get("/{drive_id}")

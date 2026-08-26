@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # explanations stay on the AI Studio key path — low volume, not currently rate-limited.
     GCP_PROJECT_ID: str = "placement-agent-22587"
     VERTEX_EMBEDDING_LOCATION: str = "us-central1"
+    VERTEX_ORCHESTRATOR_MODEL: str = "gemini-2.5-flash"  # function calling verified live on this model
 
     CHROMA_PERSIST_DIR: str = "./chroma_db"
 
