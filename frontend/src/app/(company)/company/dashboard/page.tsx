@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
 import PortalHeaderActions from "@/components/layout/PortalHeaderActions";
+import MyDrives from "@/components/company/MyDrives";
 import { drivesAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import toast from "react-hot-toast";
@@ -43,6 +44,8 @@ export default function CompanyDashboard() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<Step>("upload");
+  /** Posting a drive vs following the ones already posted. */
+  const [view, setView] = useState<"post" | "mine">("post");
   const [jdText, setJdText] = useState("");
   const [parsedJD, setParsedJD] = useState<Record<string, unknown> | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -165,6 +168,34 @@ export default function CompanyDashboard() {
       </TopBar>
 
       <main className="p-8 max-w-4xl mx-auto space-y-8">
+        {/* Posting a drive and following one are different jobs — the wizard
+            is a one-time flow, the drives list is what you come back for. */}
+        <div className="flex items-center gap-1" style={{ borderBottom: "1px solid var(--line)" }}>
+          {([
+            { key: "post", label: "Post a Drive" },
+            { key: "mine", label: "My Drives" },
+          ] as const).map((t) => {
+            const on = view === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setView(t.key)}
+                className="px-4 py-2.5 text-[13px] font-semibold transition-colors"
+                style={{
+                  color: on ? "var(--jade-d)" : "var(--ash)",
+                  borderBottom: `2px solid ${on ? "var(--jade)" : "transparent"}`,
+                  marginBottom: "-1px",
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {view === "mine" && <MyDrives />}
+
+        {view === "post" && (<>
         {/* Step indicator */}
         <div className="flex items-center gap-0">
           {STEPS.map((s, i) => (
@@ -496,6 +527,7 @@ export default function CompanyDashboard() {
             </motion.div>
           )}
         </AnimatePresence>
+        </>)}
       </main>
     </div>
   );

@@ -478,6 +478,77 @@ async def list_drives(
     ]
 
 
+@router.get("/mine/company")
+async def list_my_company_drives(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.COMPANY, UserRole.TPO)),
+):
+    """The drives belonging to the signed-in HR user's company.
+
+    Declared above /{drive_id}/... routes and given a two-segment path so it
+    can't be mistaken for a drive id — same trap /agent-runs/live sits above.
+
+    An HR user posts a JD and then has no idea what happened to it. This is the
+    TPO's drives view narrowed to one company: where each drive reached in the
+    pipeline, and what the agent has been doing to it. Cancelled drives are
+    filtered out here rather than client-side, because a company has no archive
+    view to restore them from.
+    """
+    company_result = await db.execute(
+        select(Company).where(Company.user_id == current_user.id)
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        # A TPO calling this has no company of their own; so does an HR account
+        # the TPO never linked. Empty list beats a 404 — the page renders its
+        # own "nothing here yet" state.
+        return {"company": None, "drives": []}
+
+    result = await db.execute(
+        select(PlacementDrive)
+        .where(
+            PlacementDrive.company_id == company.id,
+            PlacementDrive.status != DriveStatus.CANCELLED,
+        )
+        .order_by(PlacementDrive.created_at.desc())
+    )
+    drives = result.scalars().all()
+
+    out = []
+    for d in drives:
+        # Counts the HR user actually cares about: how many students the agent
+        # judged eligible, and how many made the shortlist.
+        matched = await db.execute(
+            select(func.count()).select_from(MatchScore).where(MatchScore.drive_id == d.id)
+        )
+        shortlisted = await db.execute(
+            select(func.count()).select_from(MatchScore).where(
+                MatchScore.drive_id == d.id, MatchScore.shortlisted == True  # noqa: E712
+            )
+        )
+        latest = await db.execute(
+            select(AgentTrace).where(AgentTrace.drive_id == d.id)
+            .order_by(AgentTrace.seq.desc()).limit(1)
+        )
+        last = latest.scalar_one_or_none()
+        out.append({
+            "id": d.id,
+            "title": d.title,
+            "status": d.status.value,
+            "package_lpa": d.package_lpa,
+            "deadline": d.deadline.isoformat() if d.deadline else None,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "role": (d.jd_parsed or {}).get("role"),
+            "candidates_matched": matched.scalar_one(),
+            "candidates_shortlisted": shortlisted.scalar_one(),
+            "last_agent_step": (
+                {"kind": last.kind, "summary": last.summary[:200], "agent": last.agent}
+                if last else None
+            ),
+        })
+    return {"company": company.name, "drives": out}
+
+
 @router.get("/{drive_id}/shortlist")
 async def get_shortlist(
     drive_id: str,
