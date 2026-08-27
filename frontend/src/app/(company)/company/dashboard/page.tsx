@@ -7,6 +7,7 @@ import {
   Star, Users, Target, Package,
 } from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
+import PortalHeaderActions from "@/components/layout/PortalHeaderActions";
 import { drivesAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import toast from "react-hot-toast";
@@ -159,7 +160,9 @@ export default function CompanyDashboard() {
       <TopBar
         title="Company Portal"
         subtitle={`Welcome, ${user?.email ?? "Company HR"}`}
-      />
+      >
+        <PortalHeaderActions role="Company HR" />
+      </TopBar>
 
       <main className="p-8 max-w-4xl mx-auto space-y-8">
         {/* Step indicator */}
