@@ -9,7 +9,7 @@ top-N) — large intermediate data (the full student roster, full match list)
 lives in ToolContext instead, so token cost doesn't scale with roster size.
 """
 from typing import Any
-from sqlalchemy import select
+from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -88,6 +88,44 @@ TOOL_DECLARATIONS = [
         },
     },
     {
+        "name": "select_candidates",
+        "description": (
+            "Find students matching one plain criterion and propose them for the shortlist — for "
+            "when the TPO names a specific person or rule (\"approve anyone with 99%+ attendance\", "
+            "\"include Rahul Sharma\", \"add students within 0.5 CGPA of the cutoff even though they "
+            "didn't pass eligibility\"). Searches the FULL student roster, not just students who "
+            "passed check_eligibility — this is how a TPO overrides the automatic cutoff for a "
+            "specific person or group. Matches are proposed and pre-checked for the TPO to confirm on "
+            "the shortlist review screen; this never finalizes anything by itself.\n\n"
+            "By name, use 'contains' with just what the TPO typed (first name alone is fine — do not "
+            "require a surname or exact match). If that matches MORE THAN ONE student, nobody is added "
+            "yet — the result comes back with each candidate's name, roll_no, branch, and cgpa. Call "
+            "ask_human with one option per candidate formatted 'Name — Roll No' so the TPO can click "
+            "the right one, then once they answer, call select_candidates again with field='roll_no', "
+            "op='eq', value=<the roll number they picked> to add exactly that student."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "field": {
+                    "type": "STRING",
+                    "enum": ["cgpa", "attendance_pct", "backlogs_active", "name", "branch", "roll_no"],
+                    "description": "Which student attribute to filter on. Use roll_no to resolve a name ambiguity to one exact student.",
+                },
+                "op": {
+                    "type": "STRING",
+                    "enum": ["gte", "lte", "gt", "lt", "eq", "contains"],
+                    "description": "Comparison to apply. Use 'contains' for a partial/case-insensitive name or branch match.",
+                },
+                "value": {
+                    "type": "STRING",
+                    "description": "The comparison value as text (numbers are parsed for numeric fields).",
+                },
+            },
+            "required": ["field", "op", "value"],
+        },
+    },
+    {
         "name": "ask_human",
         "description": "Pause and ask the TPO (a human placement officer) a question before proceeding. Use this once ranking is complete and you have a clear shortlist recommendation ready for approval — never finalize a shortlist without asking.",
         "parameters": {
@@ -121,12 +159,72 @@ async def _exec_get_drive_context(ctx: ToolContext, args: dict) -> dict:
         {"rule_type": r.rule_type, "rule_value": r.rule_value, "rule_json": r.rule_json}
         for r in rules_result.scalars().all()
     ]
-    return {
+
+    response: dict[str, Any] = {
         "title": drive.title,
         "jd_text": drive.jd_text,
         "status": drive.status.value,
         "rules": ctx.rules,
     }
+
+    # Some drives already have parsing/eligibility/a ranked shortlist from the
+    # older deterministic pipeline (Company/HR's "run pipeline") or an
+    # earlier agent run this conversation didn't see (a fresh ToolContext on
+    # resume — see resume_run). Surface it so the model can pick up from here
+    # instead of silently redoing work a human already watched happen
+    # (observed live 2026-08-28: a drive already at "shortlist_pending" from
+    # HR's pipeline re-ran the whole thing from parse_jd on "Start the agent").
+    if drive.jd_parsed:
+        ctx.jd_parsed = drive.jd_parsed
+        response["existing_jd_parsed"] = True
+
+    elig_result = await ctx.db.execute(
+        select(EligibilityResult)
+        .where(EligibilityResult.drive_id == ctx.drive_id, EligibilityResult.eligible == True)
+        .order_by(EligibilityResult.checked_at.desc())
+    )
+    eligible_ids: list[str] = []
+    seen: set[str] = set()
+    for r in elig_result.scalars().all():
+        if r.student_id in seen:
+            continue
+        seen.add(r.student_id)
+        eligible_ids.append(r.student_id)
+    if eligible_ids:
+        response["existing_eligible_count"] = len(eligible_ids)
+        if not ctx.all_students:
+            ctx.all_students = await _load_students(ctx.db)
+        students_by_id = {s["id"]: s for s in ctx.all_students}
+        ctx.eligible_students = [students_by_id[i] for i in eligible_ids if i in students_by_id]
+
+    match_result = await ctx.db.execute(
+        select(MatchScore)
+        .options(selectinload(MatchScore.student))
+        .where(MatchScore.drive_id == ctx.drive_id)
+        .order_by(MatchScore.rank)
+    )
+    existing_matches = match_result.scalars().all()
+    if existing_matches:
+        ctx.match_results = [
+            {
+                "student_id": m.student_id,
+                "name": m.student.name if m.student else None,
+                "score": m.score,
+                "rank": m.rank,
+                "explanation": m.explanation,
+            }
+            for m in existing_matches
+        ]
+        ctx.top_k_requested = len(existing_matches)
+        response["existing_shortlist"] = {
+            "ranked_count": len(existing_matches),
+            "top_candidates": [
+                {"name": m["name"], "score": m["score"], "rank": m["rank"]}
+                for m in ctx.match_results[:5]
+            ],
+        }
+
+    return response
 
 
 async def _exec_parse_jd(ctx: ToolContext, args: dict) -> dict:
@@ -218,7 +316,35 @@ async def _exec_check_eligibility(ctx: ToolContext, args: dict) -> dict:
 
 async def _exec_rank_candidates(ctx: ToolContext, args: dict) -> dict:
     if not ctx.eligible_students:
-        return {"error": "call check_eligibility first — no eligible students to rank"}
+        # A resumed run gets a brand-new ToolContext (see resume_run), so
+        # eligible_students/jd_parsed/drive are all empty even though the
+        # original run already computed and persisted them. Reload from the
+        # DB instead of erroring — both jd_parsed (PlacementDrive.jd_parsed)
+        # and the eligibility check (EligibilityResult rows) survive a run,
+        # so this needs zero extra Gemini calls, unlike re-running parse_jd.
+        if ctx.drive is None or ctx.jd_parsed is None:
+            await _exec_get_drive_context(ctx, {})
+            if ctx.drive is not None:
+                ctx.jd_parsed = ctx.drive.jd_parsed
+
+        result = await ctx.db.execute(
+            select(EligibilityResult)
+            .where(EligibilityResult.drive_id == ctx.drive_id, EligibilityResult.eligible == True)
+            .order_by(EligibilityResult.checked_at.desc())
+        )
+        eligible_ids: list[str] = []
+        seen: set[str] = set()
+        for r in result.scalars().all():
+            if r.student_id in seen:
+                continue
+            seen.add(r.student_id)
+            eligible_ids.append(r.student_id)
+        if not eligible_ids or not ctx.jd_parsed:
+            return {"error": "call check_eligibility first — no eligible students to rank"}
+        if not ctx.all_students:
+            ctx.all_students = await _load_students(ctx.db)
+        students_by_id = {s["id"]: s for s in ctx.all_students}
+        ctx.eligible_students = [students_by_id[i] for i in eligible_ids if i in students_by_id]
 
     top_k = int(args.get("top_k") or 20)
     ctx.top_k_requested = top_k
@@ -229,6 +355,12 @@ async def _exec_rank_candidates(ctx: ToolContext, args: dict) -> dict:
     students_by_id = {s["id"]: s for s in ctx.eligible_students}
     matches = await generate_all_explanations(matches, students_by_id, ctx.jd_parsed)
     ctx.match_results = matches
+
+    # A re-run within the same conversation (the TPO asked for more/fewer
+    # candidates) must replace the previous ranking, not append to it — the
+    # (drive_id, student_id) pair isn't unique, so a second insert without
+    # this would double-count everyone still in both rankings.
+    await ctx.db.execute(delete(MatchScore).where(MatchScore.drive_id == ctx.drive_id))
 
     for m in matches:
         ctx.db.add(MatchScore(
@@ -247,6 +379,114 @@ async def _exec_rank_candidates(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+_SELECT_FIELD_TYPES: dict[str, type] = {
+    "cgpa": float, "attendance_pct": float, "backlogs_active": int,
+    "name": str, "branch": str, "roll_no": str,
+}
+_SELECT_OPS = {"gte", "lte", "gt", "lt", "eq", "contains"}
+
+
+def _select_filter(students: list[dict], field: str, op: str, value: str) -> list[dict]:
+    caster = _SELECT_FIELD_TYPES[field]
+    numeric = caster is not str
+    matches = []
+    for s in students:
+        raw = s.get(field)
+        if raw is None:
+            continue
+        try:
+            sval = caster(raw)
+            cmpval = caster(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric:
+            if op == "gte" and sval >= cmpval: matches.append(s)
+            elif op == "lte" and sval <= cmpval: matches.append(s)
+            elif op == "gt" and sval > cmpval: matches.append(s)
+            elif op == "lt" and sval < cmpval: matches.append(s)
+            elif op == "eq" and sval == cmpval: matches.append(s)
+        else:
+            sval, cmpval = sval.lower(), cmpval.lower()
+            if op == "eq" and sval == cmpval: matches.append(s)
+            elif op == "contains" and cmpval in sval: matches.append(s)
+    return matches
+
+
+async def _exec_select_candidates(ctx: ToolContext, args: dict) -> dict:
+    field = args.get("field")
+    op = args.get("op")
+    value = args.get("value")
+    if field not in _SELECT_FIELD_TYPES:
+        return {"error": f"unknown field {field!r} — use one of {sorted(_SELECT_FIELD_TYPES)}"}
+    if op not in _SELECT_OPS:
+        return {"error": f"unknown op {op!r} — use one of {sorted(_SELECT_OPS)}"}
+
+    # Deliberately the FULL roster, not ctx.eligible_students — this tool's
+    # entire purpose is letting the TPO pull in someone the automatic
+    # eligibility check excluded.
+    if not ctx.all_students:
+        ctx.all_students = await _load_students(ctx.db)
+    matches = _select_filter(ctx.all_students, field, op, str(value))
+    if not matches:
+        return {"matched_count": 0, "names": []}
+
+    # A name is meant to pick ONE specific person — unlike every other field,
+    # more than one hit means genuine ambiguity (two students can share a
+    # first name), not a legitimate bulk match. Add nobody yet; hand back
+    # enough to ask_human with so the TPO can pick the exact one by roll
+    # number, then the model resolves it with field="roll_no", op="eq".
+    if field == "name" and len(matches) > 1:
+        return {
+            "ambiguous": True,
+            "matched_count": len(matches),
+            "candidates": [
+                {"name": s["name"], "roll_no": s["roll_no"], "branch": s["branch"], "cgpa": s["cgpa"]}
+                for s in matches
+            ],
+            "note": "Do not add any of these yet — call ask_human with one option per "
+                    "candidate (e.g. 'Name — Roll No'), then call select_candidates again "
+                    "with field=roll_no, op=eq once the TPO picks one.",
+        }
+
+    matched_ids = [s["id"] for s in matches]
+    existing_result = await ctx.db.execute(
+        select(MatchScore).where(
+            MatchScore.drive_id == ctx.drive_id, MatchScore.student_id.in_(matched_ids),
+        )
+    )
+    existing_by_student = {m.student_id: m for m in existing_result.scalars().all()}
+
+    max_rank_result = await ctx.db.execute(
+        select(func.max(MatchScore.rank)).where(MatchScore.drive_id == ctx.drive_id)
+    )
+    next_rank = (max_rank_result.scalar() or 0) + 1
+
+    note = f"Proposed per TPO request: {field} {op} {value}"
+    added, updated = [], []
+    for s in matches:
+        existing = existing_by_student.get(s["id"])
+        if existing:
+            existing.shortlisted = True
+            existing.tpo_override = True
+            existing.tpo_override_reason = note
+            updated.append(s["name"])
+        else:
+            ctx.db.add(MatchScore(
+                drive_id=ctx.drive_id, student_id=s["id"], score=0.0, rank=next_rank,
+                explanation=note, shortlisted=True, tpo_override=True, tpo_override_reason=note,
+            ))
+            next_rank += 1
+            added.append(s["name"])
+    await ctx.db.commit()
+
+    return {
+        "matched_count": len(matches),
+        "newly_added": added,
+        "already_on_list_now_checked": updated,
+        "note": "Pre-checked on the shortlist review screen — not final until the TPO clicks Approve there.",
+    }
+
+
 async def _exec_ask_human(ctx: ToolContext, args: dict) -> dict:
     # Intercepted by the orchestrator loop before dispatch — this executor
     # exists only so ask_human appears in TOOL_EXECUTORS for validation.
@@ -258,5 +498,6 @@ TOOL_EXECUTORS = {
     "parse_jd": _exec_parse_jd,
     "check_eligibility": _exec_check_eligibility,
     "rank_candidates": _exec_rank_candidates,
+    "select_candidates": _exec_select_candidates,
     "ask_human": _exec_ask_human,
 }

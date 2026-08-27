@@ -15,6 +15,7 @@ loading that row, injecting the human's answer as a functionResponse, and
 continuing the loop — verified by killing the container mid-pause, not just
 assumed.
 """
+import asyncio
 import time
 from typing import Any
 import httpx
@@ -24,6 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.models import AgentRun, AgentRunStatus, AgentTrace, PlacementDrive, DriveStatus
 from app.agents.tools import ToolContext, TOOL_DECLARATIONS, TOOL_EXECUTORS
+from app.agents.schedule_tools import (
+    ScheduleContext, SCHEDULE_TOOL_DECLARATIONS, SCHEDULE_TOOL_EXECUTORS,
+)
 from app.agents.auditor_agent import audit_pipeline
 from app.agents.vertex_auth import get_vertex_access_token
 from app.api.websocket import emit_agent_event
@@ -43,6 +47,15 @@ is finalized.
 
 Rules:
 - Call get_drive_context first if you don't already know the drive's JD text and rules.
+- get_drive_context may report existing_jd_parsed / existing_eligible_count /
+  existing_shortlist — this drive was already processed, either by an
+  earlier run or by the older non-agentic pipeline the Company/HR side can
+  trigger directly. That work is real and already saved; do not redo it.
+  Skip straight to ask_human, summarizing existing_shortlist's ranked_count
+  and top_candidates as your recommendation — do not call parse_jd,
+  check_eligibility, or rank_candidates. Only fall through to the normal
+  parse → check → rank sequence below when get_drive_context reports none
+  of these.
 - parse_jd must run before check_eligibility.
 - check_eligibility must run before rank_candidates.
 - Once you have ranked candidates, call ask_human with a clear recommendation
@@ -50,30 +63,107 @@ Rules:
 - Before each tool call, write one short sentence explaining why you're calling it.
 - If a tool result looks wrong, incomplete, or returns an error, say so and
   decide what to do next yourself instead of proceeding blindly.
-- Once ask_human's functionResponse comes back with the TPO's answer, do not
-  call get_drive_context or any other tool again — that answer is the final
-  step. If approved, reply with a short confirmation that the shortlist is
-  final and ready for scheduling, and stop. If rejected, reply with what you
-  understood the TPO wants changed and stop (a future run will act on it).
+- Once ask_human's functionResponse comes back with the TPO's answer:
+  - If they approved it (or said something equivalent to yes), reply with a
+    short confirmation that the shortlist is final and ready for scheduling,
+    and stop.
+  - If they asked for a different number of candidates (e.g. "5 more", "top
+    30"), call rank_candidates again with an adjusted top_k — this replaces
+    the previous ranking — then call ask_human again with the new shortlist.
+    Do not call get_drive_context, parse_jd, or check_eligibility again.
+  - If they named specific students or gave a criterion to add — including
+    students who did NOT pass check_eligibility (e.g. "approve anyone with
+    99%+ attendance", "include Rahul Sharma", "add anyone within 0.5 CGPA of
+    the cutoff") — call select_candidates once per distinct criterion with a
+    structured field/op/value filter. This is exactly how a TPO overrides the
+    automatic cutoff for a specific person; it is their call, not yours to
+    refuse. Say plainly if a matched student failed the original eligibility
+    check and why you're including them anyway. If select_candidates comes
+    back "ambiguous" (a name matched more than one student), do not guess —
+    call ask_human with one option per candidate, formatted "Name — Roll No",
+    and a question like "I found N students matching X — which one?"; once
+    the TPO answers, call select_candidates again with field="roll_no",
+    op="eq" and the roll number from the option they picked. Once a name
+    resolves to exactly one student (or matched only one to begin with), call
+    ask_human again summarizing the updated total so the TPO can review and
+    approve on the shortlist screen — never say a student is "approved";
+    only the TPO's own approve action there is final.
+  - If they asked for something select_candidates and rank_candidates truly
+    cannot do (not a plain field comparison, or redefining what a field
+    means), say so plainly, state what you understood, and stop.
 """
 
-MAX_STEPS = 12
+SCHEDULING_SYSTEM_PROMPT = """You are the logistics agent for a college placement drive.
+
+A shortlist has been approved and an interview round already exists with a
+fixed date/time window, mode, and duration — a human set those. Your job is
+to build a conflict-free interview schedule inside that window and commit it.
+
+Rules:
+- Call get_schedule_context first if you don't already know the round, the
+  shortlisted count, and the available panels/rooms.
+- Call propose_schedule to generate a candidate schedule.
+- Always call validate_schedule immediately after propose_schedule, before
+  doing anything else — it is the deterministic source of truth on conflicts,
+  never your own judgement, and it checks the whole calendar, not just this
+  round.
+- If validate_schedule reports violations, read them, decide a specific fix
+  (exclude the exact conflicting panel_id or room_id it named, or extend the
+  round's end time to make room), call propose_schedule again with that
+  adjustment, and validate again.
+- Never call commit_schedule unless the most recent validate_schedule for the
+  current proposal reported zero violations.
+- If you still can't reach a clean schedule after 3 proposal attempts, or some
+  students have no available slot, call ask_human with a clear summary of the
+  tradeoff and a specific question — never commit a schedule you know still
+  has unresolved conflicts or unexplained gaps.
+- Before each tool call, write one short sentence explaining why you're
+  calling it, and state plainly what you traded off if you had to relax
+  anything to get a clean result.
+"""
+
+_PROFILES = {
+    "shortlist": {
+        "system_prompt": ORCHESTRATOR_SYSTEM_PROMPT,
+        "tools": TOOL_DECLARATIONS,
+        "executors": TOOL_EXECUTORS,
+    },
+    "schedule": {
+        "system_prompt": SCHEDULING_SYSTEM_PROMPT,
+        "tools": SCHEDULE_TOOL_DECLARATIONS,
+        "executors": SCHEDULE_TOOL_EXECUTORS,
+    },
+}
+
+MAX_STEPS = 15
 
 
-async def _call_gemini(contents: list[dict]) -> dict:
+# Vertex hands back 429 (quota) or 503 (overloaded) under real load — both are
+# transient and worth a couple of retries rather than failing the whole run,
+# which previously happened on the very first 429 seen during live testing.
+_RETRY_DELAYS_S = [5, 15]
+
+
+async def _call_gemini(contents: list[dict], system_prompt: str, tool_declarations: list[dict]) -> dict:
     token = get_vertex_access_token()
     url = VERTEX_GENERATE_URL.format(
         project=settings.GCP_PROJECT_ID, model=settings.VERTEX_ORCHESTRATOR_MODEL,
     )
     payload = {
-        "systemInstruction": {"parts": [{"text": ORCHESTRATOR_SYSTEM_PROMPT}]},
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": contents,
-        "tools": [{"functionDeclarations": TOOL_DECLARATIONS}],
+        "tools": [{"functionDeclarations": tool_declarations}],
     }
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json=payload)
-        resp.raise_for_status()
-        return resp.json()
+        for attempt, delay in enumerate([*_RETRY_DELAYS_S, None]):
+            resp = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json=payload)
+            if resp.status_code not in (429, 503) or delay is None:
+                resp.raise_for_status()
+                return resp.json()
+            logger.warning(
+                f"Vertex {resp.status_code}, retrying in {delay}s (attempt {attempt + 1}/{len(_RETRY_DELAYS_S)})"
+            )
+            await asyncio.sleep(delay)
 
 
 async def _last_seq(db: AsyncSession, run_id: str) -> int:
@@ -99,14 +189,34 @@ async def _log_trace(
     )
 
 
-async def create_run(db: AsyncSession, drive_id: str) -> AgentRun:
+async def create_run(
+    db: AsyncSession, drive_id: str, kind: str = "shortlist", round_id: str | None = None,
+) -> AgentRun:
     """Insert the AgentRun row synchronously so callers get a run_id back
-    immediately, before the (slow) agent loop runs in the background."""
-    run = AgentRun(drive_id=drive_id, status=AgentRunStatus.RUNNING, state_json={"contents": []})
+    immediately, before the (slow) agent loop runs in the background.
+
+    `kind` picks which system prompt/tool set this run (and any later
+    resume) uses — stored in state_json rather than a new column, since
+    AgentRun already exists in the deployed Cloud SQL schema and this app has
+    no migration path beyond create_all's additive table creation."""
+    if kind not in _PROFILES:
+        raise ValueError(f"unknown agent run kind {kind!r}")
+    state: dict[str, Any] = {"contents": [], "kind": kind}
+    if round_id:
+        state["round_id"] = round_id
+    run = AgentRun(drive_id=drive_id, status=AgentRunStatus.RUNNING, state_json=state)
     db.add(run)
     await db.commit()
     await db.refresh(run)
     return run
+
+
+def _build_ctx(db: AsyncSession, drive_id: str, kind: str, round_id: str | None):
+    if kind == "schedule":
+        if not round_id:
+            raise ValueError("schedule run has no round_id in state_json")
+        return ScheduleContext(db, drive_id, round_id)
+    return ToolContext(db, drive_id)
 
 
 async def execute_run(db: AsyncSession, run_id: str, drive_id: str) -> AgentRun:
@@ -115,10 +225,15 @@ async def execute_run(db: AsyncSession, run_id: str, drive_id: str) -> AgentRun:
     if not run:
         raise ValueError(f"agent run {run_id} not found")
 
-    contents = [
-        {"role": "user", "parts": [{"text": f"Begin processing drive {drive_id}."}]}
-    ]
-    await _run_loop(db, run, ToolContext(db, drive_id), contents)
+    kind = (run.state_json or {}).get("kind", "shortlist")
+    round_id = (run.state_json or {}).get("round_id")
+    begin_text = (
+        f"Begin building the interview schedule for round {round_id}."
+        if kind == "schedule" else f"Begin processing drive {drive_id}."
+    )
+    contents = [{"role": "user", "parts": [{"text": begin_text}]}]
+    ctx = _build_ctx(db, drive_id, kind, round_id)
+    await _run_loop(db, run, ctx, contents, kind)
     return run
 
 
@@ -129,6 +244,9 @@ async def resume_run(db: AsyncSession, run_id: str, human_answer: str) -> AgentR
         raise ValueError(f"agent run {run_id} not found")
     if run.status != AgentRunStatus.PAUSED:
         raise ValueError(f"agent run {run_id} is {run.status.value}, not paused")
+
+    kind = (run.state_json or {}).get("kind", "shortlist")
+    round_id = (run.state_json or {}).get("round_id")
 
     contents = run.state_json["contents"]
     # Load count is the durability canary: a resume that replays fewer turns than
@@ -145,7 +263,8 @@ async def resume_run(db: AsyncSession, run_id: str, human_answer: str) -> AgentR
     seq = await _last_seq(db, run.id) + 1
     await _log_trace(db, run, seq, "orchestrator", "observation", f"TPO answered: {human_answer}")
 
-    await _run_loop(db, run, ToolContext(db, run.drive_id), contents)
+    ctx = _build_ctx(db, run.drive_id, kind, round_id)
+    await _run_loop(db, run, ctx, contents, kind)
     return run
 
 
@@ -158,13 +277,51 @@ def _strip_thought_signatures(parts: list[dict]) -> list[dict]:
     return [{k: v for k, v in p.items() if k != "thoughtSignature"} for p in parts]
 
 
-async def _run_loop(db: AsyncSession, run: AgentRun, ctx: ToolContext, contents: list[dict]) -> None:
+def _snapshot_state(run: AgentRun, contents: list[dict]) -> dict:
+    """Preserve kind/round_id (set once at create_run) across every state_json
+    write — a plain {"contents": ...} overwrite would silently erase them,
+    and resume_run needs them to pick the right system prompt/tools again."""
+    return {**(run.state_json or {}), "contents": list(contents)}
+
+
+async def _run_loop(
+    db: AsyncSession, run: AgentRun, ctx: ToolContext | ScheduleContext,
+    contents: list[dict], kind: str = "shortlist",
+) -> None:
+    """Thin wrapper: every exception inside the loop must end in the run
+    being marked FAILED, not silently abandoned. _call_gemini's own errors
+    already do that, but anything else unhandled (a DB timeout on a state
+    save, a tool executor raising outside its own try/except, ...) would
+    otherwise leave the run stuck showing "running" forever — nothing else
+    was ever going to resume it. Observed live 2026-08-27: a scheduling run's
+    state-save hit a connection pool timeout mid-loop and the run just sat
+    there, indistinguishable in the UI from the agent still thinking."""
+    try:
+        await _run_loop_inner(db, run, ctx, contents, kind)
+    except Exception as e:
+        logger.error(f"[{run.drive_id}] orchestrator loop crashed: {e}")
+        try:
+            run.status = AgentRunStatus.FAILED
+            await db.commit()
+        except Exception as commit_err:
+            logger.error(f"[{run.drive_id}] could not even mark run failed: {commit_err}")
+
+
+async def _run_loop_inner(
+    db: AsyncSession, run: AgentRun, ctx: ToolContext | ScheduleContext,
+    contents: list[dict], kind: str = "shortlist",
+) -> None:
+    profile = _PROFILES[kind]
+    system_prompt = profile["system_prompt"]
+    tool_declarations = profile["tools"]
+    tool_executors = profile["executors"]
+
     seq = await _last_seq(db, run.id)
 
     for _step in range(MAX_STEPS):
         t0 = time.time()
         try:
-            response = await _call_gemini(contents)
+            response = await _call_gemini(contents, system_prompt, tool_declarations)
         except Exception as e:
             logger.error(f"[{run.drive_id}] orchestrator Gemini call failed: {e}")
             run.status = AgentRunStatus.FAILED
@@ -187,7 +344,7 @@ async def _run_loop(db: AsyncSession, run: AgentRun, ctx: ToolContext, contents:
         # makes SQLAlchemy's dirty-check compare the tracked value against itself,
         # so every UPDATE after the first was silently dropped and a resumed run
         # replayed a 2-turn conversation. Snapshot it.
-        run.state_json = {"contents": list(contents)}
+        run.state_json = _snapshot_state(run, contents)
         await db.commit()
 
         parts = model_turn.get("parts", [])
@@ -230,12 +387,14 @@ async def _run_loop(db: AsyncSession, run: AgentRun, ctx: ToolContext, contents:
             if name == "ask_human":
                 # A second, independent model checks the pipeline's numbers —
                 # not the orchestrator's narration of them — before a human
-                # is asked to sign off. Only meaningful once there's actually a
-                # shortlist to check: a resumed run's fresh ToolContext, or a
-                # model that calls ask_human early (e.g. the JD had no text),
-                # would otherwise hand the auditor an all-zero summary that
-                # trips its own "nothing was filtered" checks for real reasons.
-                if ctx.match_results:
+                # is asked to sign off. Only meaningful for the shortlist
+                # profile: a resumed run's fresh ToolContext, or a model that
+                # calls ask_human early (e.g. the JD had no text), would
+                # otherwise hand the auditor an all-zero summary that trips
+                # its own "nothing was filtered" checks for real reasons. The
+                # scheduling profile's ScheduleContext has no match_results at
+                # all — it audits itself via validate_schedule instead.
+                if kind == "shortlist" and ctx.match_results:
                     audit_summary = {
                         "role": (ctx.jd_parsed or {}).get("role"),
                         "package_lpa": (ctx.jd_parsed or {}).get("package_lpa"),
@@ -269,8 +428,11 @@ async def _run_loop(db: AsyncSession, run: AgentRun, ctx: ToolContext, contents:
 
                 run.status = AgentRunStatus.PAUSED
                 run.pending_question = args
-                run.state_json = {"contents": list(contents)}
-                if ctx.drive:
+                run.state_json = _snapshot_state(run, contents)
+                # Only the shortlist profile owns DriveStatus this way — the
+                # scheduling profile pausing to ask a question shouldn't
+                # silently rewind the drive back to "awaiting shortlist".
+                if kind == "shortlist" and getattr(ctx, "drive", None):
                     ctx.drive.status = DriveStatus.SHORTLIST_PENDING
                 await db.commit()
                 seq += 1
@@ -281,7 +443,7 @@ async def _run_loop(db: AsyncSession, run: AgentRun, ctx: ToolContext, contents:
                 paused = True
                 break
 
-            executor = TOOL_EXECUTORS.get(name)
+            executor = tool_executors.get(name)
             t_tool = time.time()
             if executor is None:
                 result = {"error": f"unknown tool {name}"}
@@ -318,7 +480,7 @@ async def _run_loop(db: AsyncSession, run: AgentRun, ctx: ToolContext, contents:
             return
 
         contents.append({"role": "user", "parts": function_responses})
-        run.state_json = {"contents": list(contents)}
+        run.state_json = _snapshot_state(run, contents)
         await db.commit()
 
     run.status = AgentRunStatus.FAILED

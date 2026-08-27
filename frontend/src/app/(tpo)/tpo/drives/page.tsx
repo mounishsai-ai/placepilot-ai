@@ -238,15 +238,15 @@ function ShortlistModal({
               {candidates.length} candidates, ordered by how well they match the JD. Pick who moves forward.
             </p>
           </div>
-          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+          <button onClick={onClose} className="transition-colors hover:opacity-70" style={{ color: "var(--faint)" }}>
             <X size={20} />
           </button>
         </div>
 
         {/* AI reasoning banner */}
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3 mb-4 flex items-start gap-3">
-          <Zap size={16} className="text-blue-400 flex-shrink-0 mt-0.5" />
-          <p className="text-blue-300 text-sm">
+        <div className="rounded-xl px-4 py-3 mb-4 flex items-start gap-3" style={{ background: "var(--wash)", border: "1px solid #CBEDDD" }}>
+          <Zap size={16} className="flex-shrink-0 mt-0.5" style={{ color: "var(--jade)" }} />
+          <p className="text-sm" style={{ color: "var(--jade-d)" }}>
             <strong>AI pre-selected {candidates.filter(c => c.shortlisted).length} candidates</strong> based on vector similarity to the JD.
             You can add or remove candidates below before approving.
           </p>
@@ -254,13 +254,13 @@ function ShortlistModal({
 
         {/* Search Bar */}
         <div className="relative mb-4 px-1">
-          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" />
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: "var(--faint)" }} />
           <input
             type="text"
             placeholder="Search by name or roll number..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white/[0.03] border border-white/10 rounded-lg py-2 pl-9 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.05] transition-all"
+            className="input-glass w-full py-2 pl-9 pr-4 text-sm"
           />
         </div>
 
@@ -269,50 +269,53 @@ function ShortlistModal({
           {filteredCandidates.map((c) => (
             <div
               key={c.student_id}
-              className={`rounded-xl border transition-all ${
+              className="rounded-xl border transition-all"
+              style={
                 selected.has(c.student_id)
-                  ? "border-emerald-500/30 bg-emerald-500/[0.05]"
-                  : "border-white/[0.06] bg-white/[0.02]"
-              }`}
+                  ? { borderColor: "var(--jade-mid)", background: "var(--wash)" }
+                  : { borderColor: "var(--line)", background: "var(--card)" }
+              }
             >
               <div className="flex items-center gap-3 p-3">
                 {/* Checkbox */}
                 <button
                   onClick={() => toggle(c.student_id)}
-                  className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 transition-all ${
+                  className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 transition-all"
+                  style={
                     selected.has(c.student_id)
-                      ? "bg-emerald-500 border-emerald-500"
-                      : "border border-white/20 bg-transparent"
-                  }`}
+                      ? { background: "var(--jade)", borderColor: "var(--jade)" }
+                      : { border: "1px solid var(--line)", background: "transparent" }
+                  }
                 >
                   {selected.has(c.student_id) && <Check size={12} className="text-white" />}
                 </button>
 
                 {/* Rank */}
-                <div className="w-7 h-7 rounded-lg bg-white/[0.05] flex items-center justify-center text-xs font-bold text-white/50">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold" style={{ background: "var(--wash-2)", color: "var(--ash)" }}>
                   #{c.rank}
                 </div>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-white font-medium text-sm">{c.name}</span>
+                    <span className="font-medium text-sm" style={{ color: "var(--fg)" }}>{c.name}</span>
                     <span className="badge badge-gray text-[10px]">{c.branch}</span>
                   </div>
-                  <div className="text-white/40 text-xs">{c.roll_no} · CGPA {c.cgpa}</div>
+                  <div className="text-xs" style={{ color: "var(--faint)" }}>{c.roll_no} · CGPA {c.cgpa}</div>
                 </div>
 
                 {/* Score */}
                 <div className="text-right mr-2">
-                  <div className="text-blue-400 font-bold text-sm">{Math.round(c.score * 100)}%</div>
-                  <div className="text-white/25 text-[10px]">match</div>
+                  <div className="font-bold text-sm" style={{ color: "var(--jade-d)" }}>{Math.round(c.score * 100)}%</div>
+                  <div className="text-[10px]" style={{ color: "var(--ghost)" }}>match</div>
                 </div>
 
                 {/* Expand explanation */}
                 {c.explanation?.one_liner && (
                   <button
                     onClick={() => setExpanded(expanded === c.student_id ? null : c.student_id)}
-                    className="text-white/30 hover:text-white/60 transition-colors"
+                    className="transition-colors hover:opacity-70"
+                    style={{ color: "var(--faint)" }}
                   >
                     {expanded === c.student_id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                   </button>
@@ -328,26 +331,26 @@ function ShortlistModal({
                     exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden"
                   >
-                    <div className="px-4 pb-3 pt-0 space-y-2 border-t border-white/[0.05] mt-1">
+                    <div className="px-4 pb-3 pt-0 space-y-2 mt-1" style={{ borderTop: "1px solid var(--line-2)" }}>
                       {c.explanation.one_liner && (
-                        <p className="text-white/60 text-xs italic">&ldquo;{c.explanation.one_liner}&rdquo;</p>
+                        <p className="text-xs italic" style={{ color: "var(--ash)" }}>&ldquo;{c.explanation.one_liner}&rdquo;</p>
                       )}
                       {c.explanation.strengths?.length ? (
                         <div>
-                          <div className="text-emerald-400 text-[10px] font-semibold mb-1">STRENGTHS</div>
+                          <div className="text-[10px] font-semibold mb-1" style={{ color: "var(--jade-d)" }}>STRENGTHS</div>
                           {c.explanation.strengths.slice(0, 2).map((s, i) => (
-                            <div key={i} className="text-white/50 text-xs flex gap-1.5">
-                              <span className="text-emerald-400">✓</span> {s}
+                            <div key={i} className="text-xs flex gap-1.5" style={{ color: "var(--ash)" }}>
+                              <span style={{ color: "var(--jade)" }}>✓</span> {s}
                             </div>
                           ))}
                         </div>
                       ) : null}
                       {c.explanation.gaps?.length ? (
                         <div>
-                          <div className="text-rose-400 text-[10px] font-semibold mb-1">GAPS</div>
+                          <div className="text-[10px] font-semibold mb-1" style={{ color: "var(--rose)" }}>GAPS</div>
                           {c.explanation.gaps.slice(0, 2).map((g, i) => (
-                            <div key={i} className="text-white/50 text-xs flex gap-1.5">
-                              <span className="text-rose-400">△</span> {g}
+                            <div key={i} className="text-xs flex gap-1.5" style={{ color: "var(--ash)" }}>
+                              <span style={{ color: "var(--rose)" }}>△</span> {g}
                             </div>
                           ))}
                         </div>
@@ -361,9 +364,9 @@ function ShortlistModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between pt-4 border-t border-white/[0.06] mt-4">
-          <div className="text-white/50 text-sm">
-            <span className="text-white font-semibold">{selected.size}</span> of {candidates.length} selected
+        <div className="flex items-center justify-between pt-4 mt-4" style={{ borderTop: "1px solid var(--line)" }}>
+          <div className="text-sm" style={{ color: "var(--ash)" }}>
+            <span className="font-semibold" style={{ color: "var(--fg)" }}>{selected.size}</span> of {candidates.length} selected
           </div>
           <div className="flex gap-3">
             <button onClick={onClose} className="btn-ghost">Cancel</button>
@@ -373,7 +376,7 @@ function ShortlistModal({
               className="btn-primary flex items-center gap-2"
             >
               {approving ? (
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: "rgba(255,255,255,.3)", borderTopColor: "#fff" }} />
               ) : (
                 <Check size={16} />
               )}
@@ -430,10 +433,10 @@ function ScheduleRoundModal({
       });
       const roundId: string = (roundRes.data as { id: string }).id;
 
-      // Step 2: auto-schedule slots (FCFS)
-      await scheduleAPI.autoSchedule(roundId);
+      // Step 2: start the scheduling agent (propose \u2192 validate \u2192 re-plan \u2192 commit)
+      await scheduleAPI.runAgent(roundId);
 
-      toast.success("\u2705 Interviews auto-scheduled! Confirm to notify students.");
+      toast.success("\u2705 Scheduling agent started \u2014 watch it in the agent dock.");
       onScheduled();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -704,7 +707,7 @@ function DriveCard({
             style={{ color: "var(--jade-d)", background: "var(--wash)", border: "1px solid #CBEDDD" }}
             title="Watch the agent decide each step"
           >
-            <Radio size={13} /> Watch it think
+            <Radio size={13} /> Watch Onyx think
           </Link>
           {drive.status === "draft" && (
             <button
@@ -844,7 +847,7 @@ export default function DrivesPage() {
   const [shortlistCandidates, setShortlistCandidates] = useState<ShortlistCandidate[]>([]);
   const [scheduleRoundDriveId, setScheduleRoundDriveId] = useState<string | null>(null);
   const [pollingActive, setPollingActive] = useState(false);
-  const { connected } = useTPOWebSocket();
+  useTPOWebSocket();
   const { agentEvents } = useDashboardStore();
 
   const ACTIVE_STATUSES = ["jd_analyzed", "eligibility_checked", "matched"];
@@ -948,7 +951,6 @@ export default function DrivesPage() {
             ? "A drive is in flight — refreshing every 4s"
             : "Every drive, and what the agent has done to it"
           }
-          connected={connected}
         />
 
         <main className="p-7 space-y-5">

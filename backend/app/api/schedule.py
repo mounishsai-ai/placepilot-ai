@@ -3,22 +3,23 @@ Schedule API — interview rounds, slots, panel, and room management.
 """
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.database import get_db
+from app.database import get_db, async_session_factory
 from app.models import (
     InterviewRound, InterviewSlot, Room, PanelMember,
-    PanelAvailability, PlacementDrive, RoundType, UserRole, AgentEvent,
-    DriveStatus, MatchScore, User, SlotStatus, Student,
+    PanelAvailability, PlacementDrive, RoundType, UserRole,
+    MatchScore, User, Student,
 )
 from app.api.auth import get_current_user, require_role
-from app.api.websocket import emit_agent_event
-from app.agents.scheduler_agent import allocate_slots, detect_all_conflicts
+from app.agents.scheduler_agent import detect_all_conflicts
 from app.agents.panel_agent import generate_prep_brief, structure_debrief
+from app.agents import orchestrator
+from loguru import logger
 
 router = APIRouter()
 
@@ -72,83 +73,52 @@ async def create_round(
     return {"id": round_.id, "round_no": round_.round_no}
 
 
-@router.post("/rounds/{round_id}/auto-schedule")
-async def auto_schedule_round(
+async def _run_schedule_agent_bg(run_id: str, drive_id: str):
+    """Runs in background with its OWN DB session (request session will be closed)."""
+    async with async_session_factory() as db:
+        try:
+            await orchestrator.execute_run(db, run_id, drive_id)
+        except Exception as e:
+            logger.error(f"Schedule agent run {run_id} failed for drive {drive_id}: {e}")
+
+
+@router.post("/rounds/{round_id}/run-agent")
+async def run_schedule_agent(
     round_id: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _: object = Depends(require_role(UserRole.TPO)),
 ):
-    """Trigger the scheduler agent for a specific round."""
-    round_result = await db.execute(
-        select(InterviewRound)
-        .options(selectinload(InterviewRound.drive))
-        .where(InterviewRound.id == round_id)
-    )
+    """Start the scheduling agent for this round: it proposes a schedule,
+    validates it against every other interview already on the calendar, and
+    re-plans until clean (or asks the TPO) before committing — see CLAUDE.md.
+    Runs in the background; progress shows up in the same live trace / agent
+    dock as the shortlist agent, keyed off the same drive_id.
+
+    Replaces the old auto-schedule endpoint, which wrote slots straight from
+    allocate_slots() with no check against other rounds' bookings at all."""
+    round_result = await db.execute(select(InterviewRound).where(InterviewRound.id == round_id))
     round_ = round_result.scalar_one_or_none()
     if not round_:
         raise HTTPException(status_code=404, detail="Round not found")
 
-    # Get shortlisted students for this drive
     matches_result = await db.execute(
         select(MatchScore.student_id)
         .where(MatchScore.drive_id == round_.drive_id, MatchScore.shortlisted == True)
     )
-    student_ids = [row[0] for row in matches_result.all()]
-    if not student_ids:
+    if not matches_result.first():
         raise HTTPException(
             status_code=400,
-            detail="No shortlisted students for this drive. Approve a shortlist first, then auto-schedule.",
+            detail="No shortlisted students for this drive. Approve a shortlist first, then schedule.",
         )
 
-    # Get panels and rooms
-    panels_result = await db.execute(select(PanelMember))
-    rooms_result = await db.execute(select(Room).where(Room.is_virtual == (round_.mode == "online")))
-    panels = [{"id": p.id, "name": p.name} for p in panels_result.scalars().all()]
-    rooms = [{"id": r.id, "name": r.name} for r in rooms_result.scalars().all()]
-
-    round_info = {
-        "id": round_.id,
-        "round_no": round_.round_no,
-        "round_type": round_.round_type.value if hasattr(round_.round_type, "value") else round_.round_type,
-        "start_datetime": _as_naive(round_.start_datetime) if round_.start_datetime else None,
-        "end_datetime": _as_naive(round_.end_datetime) if round_.end_datetime else None,
-        "slot_duration_min": round_.slot_duration_min,
-        "mode": round_.mode,
-    }
-
-    allocated, conflicts = allocate_slots(student_ids, round_info, panels, rooms, [])
-
-    # Persist slots
-    for slot_data in allocated:
-        slot = InterviewSlot(
-            round_id=round_id,
-            student_id=slot_data["student_id"],
-            panel_id=slot_data.get("panel_id"),
-            room_id=slot_data.get("room_id"),
-            slot_start=slot_data["slot_start"],
-            slot_end=slot_data["slot_end"],
-            status=SlotStatus.SCHEDULED,
-        )
-        db.add(slot)
-
-    payload = {"scheduled": len(allocated), "conflicts": len(conflicts)}
-    db.add(AgentEvent(
-        drive_id=round_.drive_id, event_type="schedule_created",
-        agent_name="scheduler_agent", payload=payload,
-    ))
-    # HITL gate #2: a real schedule now exists — flag it for TPO confirmation
-    # instead of leaving it silently unreviewed (previously nothing set this).
-    if round_.drive and allocated:
-        round_.drive.status = DriveStatus.SCHEDULE_PENDING
-    await db.commit()
-    await emit_agent_event(
-        "schedule_created", payload,
-        drive_id=round_.drive_id, agent_name="scheduler_agent",
-    )
+    run = await orchestrator.create_run(db, round_.drive_id, kind="schedule", round_id=round_id)
+    background_tasks.add_task(_run_schedule_agent_bg, run.id, round_.drive_id)
     return {
-        "scheduled": len(allocated),
-        "conflicts": conflicts,
+        "message": "Scheduling agent started",
+        "drive_id": round_.drive_id,
         "round_id": round_id,
+        "run_id": run.id,
     }
 
 

@@ -1,7 +1,7 @@
 """
 Analytics API — dashboard, skill-gap, readiness, and placement trend data.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, case, text
@@ -148,45 +148,126 @@ async def get_tpo_dashboard(
     }
 
 
+def _unresolved_exceptions_query():
+    """Edge cases with no human-approved MatchScore for that (drive, student)
+    pair yet. `tpo_override=True` is written only by a human-initiated path
+    (the shortlist approve endpoint, or the agent's select_candidates tool
+    acting on a TPO's own request) — never by the ranking agent on its own —
+    so it's a safe "a person already looked at this one" marker."""
+    resolved = (
+        select(MatchScore.id)
+        .where(
+            MatchScore.drive_id == EligibilityResult.drive_id,
+            MatchScore.student_id == EligibilityResult.student_id,
+            MatchScore.tpo_override == True,  # noqa: E712
+        )
+    )
+    return (
+        select(EligibilityResult)
+        .where(
+            EligibilityResult.is_edge_case == True,  # noqa: E712
+            ~resolved.exists(),
+        )
+    )
+
+
 @router.get("/exceptions")
 async def get_exceptions(
     db: AsyncSession = Depends(get_db),
     _: object = Depends(require_role(UserRole.TPO)),
 ):
-    """Borderline eligibility cases the AI flagged for human review.
+    """Borderline eligibility cases the AI flagged for human review, minus
+    the ones a TPO has already approved from this same list.
 
     `EligibilityResult.is_edge_case` is computed by the eligibility agent for
     every near-boundary student (e.g. missed CGPA cutoff by <0.3, or exactly
     one backlog over the limit) but was never read by any endpoint before this
     one — required feature #7 ("pending actions and exceptions") had no data
     source. This is that data source.
+
+    `total` is a real COUNT against the same filter — the list itself stays
+    page-sized so the card doesn't try to render hundreds of rows at once,
+    but the badge next to the heading must never just be "however many the
+    query happened to cap out at" (it used to, at a hardcoded 100).
     """
+    base = _unresolved_exceptions_query()
+
+    total_result = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = total_result.scalar() or 0
+
     result = await db.execute(
-        select(EligibilityResult)
-        .options(
+        base.options(
             selectinload(EligibilityResult.student),
             selectinload(EligibilityResult.drive).selectinload(PlacementDrive.company),
         )
-        .where(EligibilityResult.is_edge_case == True)  # noqa: E712
         .order_by(EligibilityResult.checked_at.desc())
         .limit(100)
     )
     rows = result.scalars().all()
-    return [
-        {
-            "id": r.id,
-            "drive_id": r.drive_id,
-            "drive_title": r.drive.title if r.drive else None,
-            "company": r.drive.company.name if r.drive and r.drive.company else None,
-            "student_id": r.student_id,
-            "student_name": r.student.name if r.student else None,
-            "roll_no": r.student.roll_no if r.student else None,
-            "eligible": r.eligible,
-            "reasons": r.reason,
-            "checked_at": r.checked_at.isoformat(),
-        }
-        for r in rows
-    ]
+    return {
+        "total": total,
+        "items": [
+            {
+                "id": r.id,
+                "drive_id": r.drive_id,
+                "drive_title": r.drive.title if r.drive else None,
+                "company": r.drive.company.name if r.drive and r.drive.company else None,
+                "student_id": r.student_id,
+                "student_name": r.student.name if r.student else None,
+                "roll_no": r.student.roll_no if r.student else None,
+                "eligible": r.eligible,
+                "reasons": r.reason,
+                "checked_at": r.checked_at.isoformat(),
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/exceptions/{eligibility_result_id}/approve")
+async def approve_exception(
+    eligibility_result_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """A TPO overriding one borderline student straight from the Exceptions
+    card — same write as the agent's select_candidates tool (upsert a
+    MatchScore, shortlisted + tpo_override, both True) so this list and the
+    shortlist review screen never disagree about who's in. Does NOT touch
+    drive.status: approving one edge case post-hoc shouldn't move the whole
+    drive's pipeline stage forward or backward."""
+    result = await db.execute(
+        select(EligibilityResult).where(EligibilityResult.id == eligibility_result_id)
+    )
+    exc = result.scalar_one_or_none()
+    if not exc:
+        raise HTTPException(status_code=404, detail="Exception not found")
+
+    existing_result = await db.execute(
+        select(MatchScore).where(
+            MatchScore.drive_id == exc.drive_id,
+            MatchScore.student_id == exc.student_id,
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+    note = "Approved from the Exceptions card despite missed eligibility"
+
+    if existing:
+        existing.shortlisted = True
+        existing.tpo_override = True
+        existing.tpo_override_reason = note
+    else:
+        max_rank_result = await db.execute(
+            select(func.max(MatchScore.rank)).where(MatchScore.drive_id == exc.drive_id)
+        )
+        next_rank = (max_rank_result.scalar() or 0) + 1
+        db.add(MatchScore(
+            drive_id=exc.drive_id, student_id=exc.student_id, score=0.0, rank=next_rank,
+            explanation=note, shortlisted=True, tpo_override=True, tpo_override_reason=note,
+        ))
+
+    await db.commit()
+    return {"message": "Approved and added to the shortlist"}
 
 
 @router.get("/audit-trail")

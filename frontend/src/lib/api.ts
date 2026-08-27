@@ -95,15 +95,30 @@ export const analyticsAPI = {
   readiness: () => api.get("/api/analytics/readiness"),
   driveStats: (id: string) => api.get(`/api/analytics/drives/${id}`),
   exceptions: () => api.get("/api/analytics/exceptions"),
+  approveException: (id: string) => api.post(`/api/analytics/exceptions/${id}/approve`),
   auditTrail: () => api.get("/api/analytics/audit-trail"),
   ask: (question: string) => api.post("/api/analytics/ask", { question }),
+};
+
+// ─── Notices (HR → TPO) ───────────────────────────────────────────────────
+export const noticesAPI = {
+  /** TPO side — every company's notices, newest first. */
+  list: () => api.get("/api/notices"),
+  /** Company side — send a notice to the placement office. */
+  send: (data: { subject: string; message: string; drive_id?: string | null }) =>
+    api.post("/api/notices", data),
+  /** Company side — this company's own sent history. */
+  sent: () => api.get("/api/notices/sent"),
 };
 
 // ─── Schedule ─────────────────────────────────────────────────────────────
 export const scheduleAPI = {
   createRound: (data: object) => api.post("/api/schedule/rounds", data),
-  autoSchedule: (roundId: string) =>
-    api.post(`/api/schedule/rounds/${roundId}/auto-schedule`),
+  /** Starts the scheduling agent (propose → validate → re-plan → commit) in
+      the background — same orchestrator/trace infra as agentAPI, keyed off
+      the same drive_id, so the existing agent dock picks it up automatically. */
+  runAgent: (roundId: string) =>
+    api.post(`/api/schedule/rounds/${roundId}/run-agent`),
   getSlots: (roundId: string) =>
     api.get(`/api/schedule/rounds/${roundId}/slots`),
   updateResult: (slotId: string, data: object) =>

@@ -26,10 +26,10 @@ const BRANCHES = ["All", "CSE", "IT", "ECE", "EEE", "ME", "CE", "MCA", "Data Sci
 
 function ReadinessBar({ score }: { score: number | null }) {
   const s = score ?? 0;
-  const color = s >= 80 ? "#10b981" : s >= 60 ? "#4d88ff" : s >= 40 ? "#f59e0b" : "#f43f5e";
+  const color = s >= 80 ? "#0FA968" : s >= 60 ? "#4C79CF" : s >= 40 ? "#D9922B" : "#C2453F";
   return (
     <div className="flex items-center gap-2 min-w-[80px]">
-      <div className="flex-1 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--line-2)" }}>
         <div
           className="h-full rounded-full transition-all"
           style={{ width: `${s}%`, backgroundColor: color }}
@@ -135,14 +135,18 @@ export default function StudentsPage() {
           {/* Filters */}
           <div className="glass-card flex items-center gap-4 flex-wrap">
             {/* Search */}
-            <div className="flex items-center gap-2 bg-white/[0.04] rounded-xl px-3 py-2 flex-1 min-w-48">
-              <Search size={15} className="text-white/30" />
+            <div
+              className="flex items-center gap-2 rounded-xl px-3 py-2 flex-1 min-w-48"
+              style={{ background: "var(--wash-2)", border: "1px solid var(--line)" }}
+            >
+              <Search size={15} style={{ color: "var(--faint)" }} />
               <input
                 type="text"
                 placeholder="Search name or roll no..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="bg-transparent text-white placeholder-white/25 text-sm outline-none flex-1"
+                className="bg-transparent text-sm outline-none flex-1"
+                style={{ color: "var(--fg)" }}
               />
             </div>
 
@@ -151,11 +155,12 @@ export default function StudentsPage() {
               <select
                 value={branch}
                 onChange={(e) => setBranch(e.target.value)}
-                className="bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 pr-8 outline-none appearance-none cursor-pointer"
+                className="text-sm rounded-xl px-3 py-2 pr-8 outline-none appearance-none cursor-pointer"
+                style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
               >
                 {BRANCHES.map((b) => <option key={b} value={b}>{b}</option>)}
               </select>
-              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--faint)" }} />
             </div>
 
             {/* Min CGPA */}
@@ -165,7 +170,8 @@ export default function StudentsPage() {
               value={minCgpa}
               onChange={(e) => setMinCgpa(e.target.value)}
               min="0" max="10" step="0.1"
-              className="bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 w-28 outline-none"
+              className="text-sm rounded-xl px-3 py-2 w-28 outline-none"
+              style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
             />
 
             {/* Sort */}
@@ -173,16 +179,17 @@ export default function StudentsPage() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 pr-8 outline-none appearance-none cursor-pointer"
+                className="text-sm rounded-xl px-3 py-2 pr-8 outline-none appearance-none cursor-pointer"
+                style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
               >
                 <option value="cgpa">Sort: CGPA</option>
                 <option value="readiness">Sort: Readiness</option>
                 <option value="name">Sort: Name</option>
               </select>
-              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--faint)" }} />
             </div>
 
-            <span className="text-white/30 text-sm ml-auto">{filtered.length} results</span>
+            <span className="text-sm ml-auto" style={{ color: "var(--faint)" }}>{filtered.length} results</span>
           </div>
 
           {/* Table */}
@@ -190,9 +197,9 @@ export default function StudentsPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-white/[0.06]">
+                  <tr style={{ borderBottom: "1px solid var(--line)" }}>
                     {["Roll No", "Name", "Branch", "Batch", "CGPA", "Backlogs", "Readiness", "Top Skills"].map((h) => (
-                      <th key={h} className="text-left text-white/35 font-medium text-xs uppercase tracking-wider px-4 py-3">
+                      <th key={h} className="text-left font-medium text-xs uppercase tracking-wider px-4 py-3" style={{ color: "var(--faint)" }}>
                         {h}
                       </th>
                     ))}
@@ -204,14 +211,14 @@ export default function StudentsPage() {
                       <tr key={i}>
                         {Array.from({ length: 8 }).map((_, j) => (
                           <td key={j} className="px-4 py-3">
-                            <div className="h-4 rounded bg-white/[0.03] animate-pulse" />
+                            <div className="h-4 rounded animate-pulse" style={{ background: "var(--line-2)" }} />
                           </td>
                         ))}
                       </tr>
                     ))
                   ) : filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center text-white/30 py-12">
+                      <td colSpan={8} className="text-center py-12" style={{ color: "var(--faint)" }}>
                         No students found
                       </td>
                     </tr>
@@ -223,28 +230,34 @@ export default function StudentsPage() {
                         animate={{ opacity: 1 }}
                         transition={{ delay: Math.min(i * 0.02, 0.3) }}
                         onClick={() => setSelectedStudent(selectedStudent?.id === s.id ? null : s)}
-                        className={`border-b border-white/[0.03] hover:bg-white/[0.03] cursor-pointer transition-colors ${
-                          selectedStudent?.id === s.id ? "bg-blue-500/[0.04]" : ""
-                        }`}
+                        className="cursor-pointer transition-colors hover:bg-[var(--wash-2)]"
+                        style={{
+                          borderBottom: "1px solid var(--line-2)",
+                          background: selectedStudent?.id === s.id ? "var(--wash)" : undefined,
+                        }}
                       >
-                        <td className="px-4 py-3 text-white/50 font-mono text-xs">{s.roll_no}</td>
-                        <td className="px-4 py-3 text-white font-medium">{s.name}</td>
+                        <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--ash)" }}>{s.roll_no}</td>
+                        <td className="px-4 py-3 font-medium" style={{ color: "var(--fg)" }}>{s.name}</td>
                         <td className="px-4 py-3">
                           <span className="badge badge-gray text-[10px]">{s.branch}</span>
                         </td>
-                        <td className="px-4 py-3 text-white/50">{s.batch}</td>
+                        <td className="px-4 py-3" style={{ color: "var(--ash)" }}>{s.batch}</td>
                         <td className="px-4 py-3">
-                          <span className={`font-bold ${
-                            s.cgpa >= 8.5 ? "text-emerald-400" :
-                            s.cgpa >= 7.0 ? "text-blue-400" :
-                            s.cgpa >= 6.0 ? "text-amber-400" : "text-rose-400"
-                          }`}>{s.cgpa.toFixed(2)}</span>
+                          <span
+                            className="font-bold"
+                            style={{
+                              color:
+                                s.cgpa >= 8.5 ? "var(--jade-d)" :
+                                s.cgpa >= 7.0 ? "var(--jade)" :
+                                s.cgpa >= 6.0 ? "var(--ash)" : "var(--rose)",
+                            }}
+                          >{s.cgpa.toFixed(2)}</span>
                         </td>
                         <td className="px-4 py-3">
                           {s.backlogs_active > 0 ? (
                             <span className="badge badge-rose text-[10px]">{s.backlogs_active} active</span>
                           ) : (
-                            <span className="text-white/25 text-xs">—</span>
+                            <span className="text-xs" style={{ color: "var(--ghost)" }}>—</span>
                           )}
                         </td>
                         <td className="px-4 py-3">
@@ -256,7 +269,7 @@ export default function StudentsPage() {
                               <span key={sk} className="badge badge-blue text-[9px] py-0">{sk}</span>
                             ))}
                             {s.skills.length > 3 && (
-                              <span className="text-white/25 text-[9px]">+{s.skills.length - 3}</span>
+                              <span className="text-[9px]" style={{ color: "var(--ghost)" }}>+{s.skills.length - 3}</span>
                             )}
                           </div>
                         </td>
@@ -273,14 +286,19 @@ export default function StudentsPage() {
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="glass-card border border-blue-500/20"
+              className="glass-card"
+              style={{ border: "1px solid var(--gold-ln)" }}
             >
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="text-white font-bold text-base">{selectedStudent.name}</h3>
-                  <p className="text-white/40 text-sm">{selectedStudent.roll_no} · {selectedStudent.branch} {selectedStudent.batch}</p>
+                  <h3 className="font-bold text-base" style={{ color: "var(--fg)" }}>{selectedStudent.name}</h3>
+                  <p className="text-sm" style={{ color: "var(--ash)" }}>{selectedStudent.roll_no} · {selectedStudent.branch} {selectedStudent.batch}</p>
                 </div>
-                <button onClick={() => setSelectedStudent(null)} className="text-white/30 hover:text-white transition-colors text-lg">✕</button>
+                <button
+                  onClick={() => setSelectedStudent(null)}
+                  className="transition-colors text-lg"
+                  style={{ color: "var(--faint)" }}
+                >✕</button>
               </div>
               <div className="grid grid-cols-4 gap-4 mb-4">
                 {[
@@ -289,14 +307,14 @@ export default function StudentsPage() {
                   { label: "Readiness Score", value: `${selectedStudent.placement_readiness_score ?? "N/A"}/100` },
                   { label: "Total Skills",   value: selectedStudent.skills.length },
                 ].map((stat) => (
-                  <div key={stat.label} className="bg-white/[0.03] rounded-xl p-3 text-center">
-                    <div className="text-white font-bold text-lg">{stat.value}</div>
-                    <div className="text-white/40 text-xs">{stat.label}</div>
+                  <div key={stat.label} className="rounded-xl p-3 text-center" style={{ background: "var(--wash-2)" }}>
+                    <div className="font-bold text-lg" style={{ color: "var(--fg)" }}>{stat.value}</div>
+                    <div className="text-xs" style={{ color: "var(--ash)" }}>{stat.label}</div>
                   </div>
                 ))}
               </div>
               <div>
-                <div className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2" style={{ color: "var(--ash)" }}>
                   <BookOpen size={12} /> All Skills
                 </div>
                 <div className="flex flex-wrap gap-2">

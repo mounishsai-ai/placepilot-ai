@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { ArrowLeft, Play } from "lucide-react";
@@ -68,22 +68,22 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
   const [sending, setSending] = useState(false);
   const [starting, setStarting] = useState(false);
 
-  const { connected } = useTPOWebSocket();
+  useTPOWebSocket();
   const { agentEvents } = useDashboardStore();
-
-  /* The resume endpoint hands control to a background task and returns before
-     the agent picks the answer up, so the run reads "paused" for a moment after
-     answering. Keep polling through that window instead of stopping early. */
-  const answeredAt = useRef(0);
 
   const fetchRun = useCallback(async (id: string) => {
     try {
       const res = await agentAPI.getRun(id);
       const data: AgentRun = res.data;
       setRun(data);
-      if (data.status === "running") setPolling(true);
-      else if (data.status === "paused") setPolling(Date.now() - answeredAt.current < 25000);
-      else setPolling(false);
+      // Poll continuously through "running" and "paused" — not just for a
+      // window after this page's OWN answer button was clicked. The agent
+      // dock on every other screen can also answer this exact run; a
+      // time-boxed window only caught that if you happened to be on this
+      // page when you answered. Otherwise Control Tower quietly stopped
+      // polling and sat frozen on "waiting for you" long after the dock had
+      // already resumed and finished the run (observed live 2026-08-28).
+      setPolling(data.status === "running" || data.status === "paused");
       if (data.status !== "paused") setSending(false);
     } catch {
       setPolling(false);
@@ -146,7 +146,6 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
   const answer = async (text: string) => {
     if (!runId) return;
     setSending(true);
-    answeredAt.current = Date.now();
     try {
       await agentAPI.answer(runId, text);
       setPolling(true);
@@ -176,6 +175,19 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
       observations.set(s.detail.name, { result: s.detail.result, cost_ms: s.cost_ms });
     }
   }
+
+  // get_drive_context reports when a drive was already parsed/checked/ranked
+  // elsewhere (an earlier run, or the older HR-side pipeline) — the model
+  // then skips straight to ask_human instead of redoing that work. Real work,
+  // just not done as tool calls in THIS trace, so the stage tiles below need
+  // a second source of "done" or they'd show three blank stages for a run
+  // that correctly did less work, not one that did nothing.
+  const contextResult = observations.get("get_drive_context")?.result as Record<string, unknown> | undefined;
+  const skippedDone = new Set<string>();
+  if (contextResult?.existing_jd_parsed) skippedDone.add("parse_jd");
+  if (contextResult?.existing_eligible_count) skippedDone.add("check_eligibility");
+  if (contextResult?.existing_shortlist) skippedDone.add("rank_candidates");
+
   const paused = run?.status === "paused";
 
   return (
@@ -183,9 +195,8 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
       <TPOSidebar />
       <div className="ml-64 flex-1 flex flex-col min-h-screen">
         <TopBar
-          title="Control Tower"
+          title="Onyx"
           subtitle={drive ? `${drive.title} · ${drive.company}` : "Watch the agent work"}
-          connected={connected}
         />
 
         <main className="p-7 flex flex-col gap-4">
@@ -234,7 +245,8 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
               <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(168px,1fr))" }}>
                 {STAGES.map((st) => {
                   const obs = observations.get(st.key);
-                  const done = !!obs;
+                  const skipped = !obs && skippedDone.has(st.key);
+                  const done = !!obs || skipped;
                   const running = !done && toolsCalled.has(st.key);
                   return (
                     <div key={st.key} className={`tile ${done ? "tile-done" : "tile-todo"}`}>
@@ -250,14 +262,16 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
                       <div className="text-[12.5px] font-semibold tracking-[-0.014em]">
                         {done ? st.done : st.label}
                       </div>
-                      {obs && (
+                      {obs ? (
                         <>
                           <div className="ct-mono text-[10px] opacity-[0.82] mt-0.5">{summarise(obs.result)}</div>
                           {obs.cost_ms !== null && (
                             <div className="ct-mono text-[9px] opacity-60 mt-1">{fmtMs(obs.cost_ms)}</div>
                           )}
                         </>
-                      )}
+                      ) : skipped ? (
+                        <div className="ct-mono text-[10px] opacity-[0.82] mt-0.5">already done — reused</div>
+                      ) : null}
                     </div>
                   );
                 })}
