@@ -60,6 +60,7 @@ Rules:
 - Produce exactly one SELECT statement, using only the listed tables and columns.
 - Never use CTEs, subqueries that read unlisted tables, comments, semicolons, or SQL-writing commands.
 - Use explicit JOINs when a join is needed; do not use comma joins.
+- Never use SELECT * — name the columns you actually need.
 - Prefer aggregated answers for count, highest, lowest, or comparison questions.
 - Add LIMIT 100 or less for row-level results. Never guess data; if the question cannot be answered
   from this schema, return {{"sql": ""}}.
@@ -108,6 +109,19 @@ _ALLOWED_FUNCTIONS = {
     "date_trunc", "extract", "cast", "nullif",
 }
 
+# QUERYABLE_SCHEMA's column lists are only a prompt hint — the real tables carry
+# more columns than that (students.email, .phone, .resume_url, .linkedin_url,
+# .github_url, .user_id; every table's link back to `users`), and nothing above
+# stops a generated query from naming them explicitly. `SELECT *` would return
+# them too. Block both: this is the actual enforcement of "no analytical purpose
+# here," not the schema doc's wording.
+_SELECT_STAR = re.compile(r"select\s+(?:[a-z_][a-z0-9_.]*\s*\.\s*)?\*", re.IGNORECASE)
+_BLOCKED_COLUMNS = re.compile(
+    r"\b(?:email|phone|user_id|resume_url|resume_uploaded_at|linkedin_url|"
+    r"github_url|hashed_password|password|token)\b",
+    re.IGNORECASE,
+)
+
 
 async def generate_sql(question: str) -> str:
     try:
@@ -134,6 +148,8 @@ def validate_readonly_sql(sql: str) -> str | None:
     if ";" in normalized or "--" in normalized or "/*" in normalized or "*/" in normalized:
         return None
     if _FORBIDDEN_KEYWORDS.search(normalized):
+        return None
+    if _SELECT_STAR.search(normalized) or _BLOCKED_COLUMNS.search(normalized):
         return None
 
     table_names = _TABLE_REFERENCE.findall(normalized)
