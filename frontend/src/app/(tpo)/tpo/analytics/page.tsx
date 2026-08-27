@@ -11,13 +11,27 @@ import TopBar from "@/components/layout/TopBar";
 import { analyticsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 
-const NEON = ["#4d88ff", "#a855f7", "#06b6d4", "#10b981", "#f59e0b", "#f43f5e"];
+/* Recharts takes colour as SVG attributes, not CSS classes — which is why
+   this page survived the light-theme migration looking broken while every
+   other one was carried by the shim. Axis labels were white-on-white.
 
+   Axis ink is set once here so the four charts can't drift apart. */
+const AXIS      = "#5F706A";              // --ash: tick labels
+const AXIS_HEAD = "#0B1714";              // --fg: category names, which are read
+const GRID      = "rgba(11,23,20,.07)";
+
+/* Branch categories. Jade family walked from deep to pale rather than six
+   unrelated hues — these are one measure split by branch, not six things. */
+const BRANCH_SERIES = ["#0A6B44", "#0FA968", "#12B872", "#34D89A", "#7FE0B6", "#A9F1D2"];
+
+/* Readiness is a ranked scale, so the colour is a ramp: bad, neutral, good,
+   best. Deliberately no amber in it — gold means the agent has stopped and
+   needs a person, and a readiness bucket never does. */
 const PIE_COLORS: Record<string, string> = {
-  not_ready:    "#f43f5e",
-  developing:   "#f59e0b",
-  ready:        "#4d88ff",
-  highly_ready: "#10b981",
+  not_ready:    "#C2453F",
+  developing:   "#93A29C",
+  ready:        "#12B872",
+  highly_ready: "#0A6B44",
 };
 
 const PIE_LABELS: Record<string, string> = {
@@ -29,13 +43,14 @@ const PIE_LABELS: Record<string, string> = {
 
 const TooltipStyle = {
   contentStyle: {
-    background: "rgba(14,14,40,0.95)",
-    border: "1px solid rgba(255,255,255,0.12)",
+    background: "#FFFFFF",
+    border: "1px solid #E4EAE7",
     borderRadius: "12px",
-    color: "#f0f4ff",
+    color: "#0B1714",
     fontSize: "12px",
+    boxShadow: "0 8px 26px rgba(11,23,20,.12)",
   },
-  cursor: { fill: "rgba(255,255,255,0.04)" },
+  cursor: { fill: "rgba(15,169,104,.07)" },
 };
 
 export default function AnalyticsPage() {
@@ -101,19 +116,19 @@ export default function AnalyticsPage() {
                     layout="vertical"
                     margin={{ top: 0, right: 20, bottom: 0, left: 80 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-                    <XAxis type="number" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={GRID} horizontal={false} />
+                    <XAxis type="number" tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} />
                     <YAxis
                       dataKey="skill"
                       type="category"
-                      tick={{ fill: "rgba(255,255,255,0.55)", fontSize: 11 }}
+                      tick={{ fill: AXIS_HEAD, fontSize: 11 }}
                       axisLine={false}
                       tickLine={false}
                       width={80}
                     />
                     <Tooltip {...TooltipStyle} />
-                    <Bar dataKey="demand_score"    fill="#4d88ff" radius={4} name="Drive Demand" />
-                    <Bar dataKey="students_with_skill" fill="#10b981" radius={4} name="Students with Skill" />
+                    <Bar dataKey="demand_score"    fill="#0A6B44" radius={4} name="Drive Demand" />
+                    <Bar dataKey="students_with_skill" fill="#34D89A" radius={4} name="Students with Skill" />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -180,17 +195,17 @@ export default function AnalyticsPage() {
               <p className="text-white/40 text-xs mb-6">Students placed per month (2025)</p>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="month" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+                  <XAxis dataKey="month" tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip {...TooltipStyle} />
                   <Line
                     type="monotone"
                     dataKey="placed"
-                    stroke="#4d88ff"
+                    stroke="#0FA968"
                     strokeWidth={2.5}
-                    dot={{ fill: "#4d88ff", strokeWidth: 0, r: 4 }}
-                    activeDot={{ r: 6, fill: "#4d88ff" }}
+                    dot={{ fill: "#0FA968", strokeWidth: 0, r: 4 }}
+                    activeDot={{ r: 6, fill: "#0A6B44" }}
                     name="Students Placed"
                   />
                 </LineChart>
@@ -207,13 +222,13 @@ export default function AnalyticsPage() {
               <p className="text-white/40 text-xs mb-6">Average readiness score by branch</p>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={branchData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="branch" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+                  <XAxis dataKey="branch" tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} />
                   <Tooltip {...TooltipStyle} />
                   <Bar dataKey="readiness" radius={[6, 6, 0, 0]} name="Avg Readiness">
                     {branchData.map((_, idx) => (
-                      <Cell key={idx} fill={NEON[idx % NEON.length]} />
+                      <Cell key={idx} fill={BRANCH_SERIES[idx % BRANCH_SERIES.length]} />
                     ))}
                   </Bar>
                 </BarChart>
