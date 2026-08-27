@@ -126,14 +126,14 @@ h1 em, h2 em, h3 em, .hl {
      pipeline tiles, so dark keeps meaning "status" and not "decoration". */
   .stat-gloss {
     @apply relative overflow-hidden rounded-xl transition-all duration-200;
-    background: linear-gradient(168deg, #FFFFFF 0%, var(--wash-2) 58%, var(--wash) 100%);
+    background: linear-gradient(168deg, #FFFFFF 0%, var(--wash-2) 52%, #E8F7F0 100%);
     border: 1px solid var(--line);
-    box-shadow: 0 1px 2px rgba(11,23,20,.04), 0 8px 20px -12px rgba(11,23,20,.18);
+    box-shadow: 0 1px 2px rgba(11,23,20,.05), 0 10px 24px -10px rgba(11,23,20,.24);
   }
   .stat-gloss::before {
     content: '';
     @apply absolute inset-0 pointer-events-none;
-    background: radial-gradient(130% 86% at 6% -14%, rgba(255,255,255,.98) 0%, rgba(255,255,255,0) 58%);
+    background: radial-gradient(130% 90% at 6% -14%, rgba(255,255,255,1) 0%, rgba(255,255,255,0) 66%);
   }
   .stat-gloss::after {
     content: '';
@@ -151,9 +151,9 @@ h1 em, h2 em, h3 em, .hl {
   /* Same gloss, gold body — carrying the one meaning gold ever carries:
      the agent has stopped and a person has to decide. */
   .stat-gloss-gold {
-    background: linear-gradient(168deg, #FFFDF8 0%, var(--gold-lt) 60%, #FBEDD4 100%);
+    background: linear-gradient(168deg, #FFFDF8 0%, var(--gold-lt) 54%, #F7E4C2 100%);
     border-color: var(--gold-ln);
-    box-shadow: 0 1px 2px rgba(138,90,18,.06), 0 8px 20px -12px rgba(138,90,18,.30);
+    box-shadow: 0 1px 2px rgba(138,90,18,.07), 0 10px 24px -10px rgba(138,90,18,.36);
   }
   .stat-gloss-gold:hover {
     border-color: #E7CE9C;

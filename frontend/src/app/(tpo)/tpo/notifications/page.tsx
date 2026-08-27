@@ -128,19 +128,27 @@ export default function NotificationsPage() {
         <main className="p-8 space-y-6">
           {/* Stats */}
           <div className="grid grid-cols-4 gap-4">
+            {/* "Queued" was amber; a message waiting its turn is normal, not a
+                person being asked for something, so it drops to plain ink.
+                "Failed" keeps rose — that one really is a problem. */}
             {[
-              { label: "Total",   value: stats.total,  icon: Inbox,         color: "text-white" },
-              { label: "Sent",    value: stats.sent,   icon: CheckCircle,   color: "text-emerald-400" },
-              { label: "Queued",  value: stats.queued, icon: Clock,         color: "text-amber-400" },
-              { label: "Failed",  value: stats.failed, icon: AlertTriangle, color: "text-rose-400" },
+              { label: "Total",  value: stats.total,  icon: Inbox,         fg: "var(--fg)",     tint: "rgba(11,23,20,.05)"   },
+              { label: "Sent",   value: stats.sent,   icon: CheckCircle,   fg: "var(--jade-d)", tint: "rgba(15,169,104,.10)" },
+              { label: "Queued", value: stats.queued, icon: Clock,         fg: "var(--fg)",     tint: "rgba(11,23,20,.05)"   },
+              { label: "Failed", value: stats.failed, icon: AlertTriangle, fg: "var(--rose)",   tint: "rgba(194,69,63,.09)"  },
             ].map((stat) => (
-              <div key={stat.label} className="glass-card flex items-center gap-3 py-4">
-                <div className="w-10 h-10 rounded-xl bg-white/[0.04] flex items-center justify-center">
-                  <stat.icon size={18} className={stat.color} />
+              <div key={stat.label} className="stat-gloss flex items-center gap-3 py-4 px-5">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: stat.tint, color: stat.fg }}
+                >
+                  <stat.icon size={18} />
                 </div>
                 <div>
-                  <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
-                  <div className="text-white/35 text-xs">{stat.label}</div>
+                  <div className="font-display text-2xl font-bold leading-none" style={{ color: stat.fg }}>
+                    {stat.value}
+                  </div>
+                  <div className="text-[11.5px] mt-1.5" style={{ color: "var(--ash)" }}>{stat.label}</div>
                 </div>
               </div>
             ))}
