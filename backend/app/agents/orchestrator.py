@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.models import AgentRun, AgentRunStatus, AgentTrace, PlacementDrive, DriveStatus
 from app.agents.tools import ToolContext, TOOL_DECLARATIONS, TOOL_EXECUTORS
+from app.agents.auditor_agent import audit_pipeline
 from app.agents.vertex_auth import get_vertex_access_token
 from app.api.websocket import emit_agent_event
 from loguru import logger
@@ -227,6 +228,45 @@ async def _run_loop(db: AsyncSession, run: AgentRun, ctx: ToolContext, contents:
             )
 
             if name == "ask_human":
+                # A second, independent model checks the pipeline's numbers —
+                # not the orchestrator's narration of them — before a human
+                # is asked to sign off. Only meaningful once there's actually a
+                # shortlist to check: a resumed run's fresh ToolContext, or a
+                # model that calls ask_human early (e.g. the JD had no text),
+                # would otherwise hand the auditor an all-zero summary that
+                # trips its own "nothing was filtered" checks for real reasons.
+                if ctx.match_results:
+                    audit_summary = {
+                        "role": (ctx.jd_parsed or {}).get("role"),
+                        "package_lpa": (ctx.jd_parsed or {}).get("package_lpa"),
+                        "total_students": len(ctx.all_students),
+                        "eligible_count": len(ctx.eligible_students),
+                        "criteria_from": ctx.criteria_from,
+                        "criteria_applied": ctx.criteria_applied,
+                        "ranked_count": len(ctx.match_results),
+                        "top_k_requested": ctx.top_k_requested,
+                        "top_candidates": [
+                            {"name": m["name"], "score": m["score"], "rank": m["rank"]}
+                            for m in ctx.match_results[:5]
+                        ],
+                    }
+                    t_audit = time.time()
+                    try:
+                        audit = await audit_pipeline(audit_summary)
+                    except Exception as e:
+                        logger.error(f"[{run.drive_id}] auditor call failed: {e}")
+                        audit = {"verdict": "clear", "concerns": [], "note": "Audit failed to run.", "degraded": True}
+                    audit_ms = int((time.time() - t_audit) * 1000)
+
+                    seq += 1
+                    await _log_trace(
+                        db, run, seq, "auditor", "audit",
+                        audit.get("note") or "Audit complete.",
+                        detail={**audit_summary, "verdict": audit.get("verdict"), "concerns": audit.get("concerns")},
+                        cost_ms=audit_ms,
+                    )
+                    args = {**args, "audit": audit}
+
                 run.status = AgentRunStatus.PAUSED
                 run.pending_question = args
                 run.state_json = {"contents": list(contents)}

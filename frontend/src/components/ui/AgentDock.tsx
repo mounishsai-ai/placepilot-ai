@@ -27,7 +27,11 @@ interface LiveRun {
   drive_title: string;
   company: string;
   status: string;
-  pending_question: { question?: string; options?: string[] } | null;
+  pending_question: {
+    question?: string;
+    options?: string[];
+    audit?: { verdict: "clear" | "flag"; concerns: string[] };
+  } | null;
   last_step: { seq: number; kind: string; summary: string } | null;
   updated_at: string;
 }
@@ -118,6 +122,14 @@ export default function AgentDock() {
             className="pointer-events-auto mx-5 mb-1 p-4 rounded-xl bg-white"
             style={{ border: "1px solid var(--gold-ln)", boxShadow: "0 -6px 30px rgba(217,146,43,.14)" }}
           >
+            {run.pending_question.audit?.verdict === "flag" &&
+              run.pending_question.audit.concerns.length > 0 && (
+                <div className="mb-2 text-[11.5px] font-medium" style={{ color: "#7C5CBF" }}>
+                  ⚖ Auditor flagged: {run.pending_question.audit.concerns[0]}
+                  {run.pending_question.audit.concerns.length > 1 &&
+                    ` (+${run.pending_question.audit.concerns.length - 1} more — see trace)`}
+                </div>
+              )}
             <p className="text-[14px] leading-relaxed max-w-[70ch]" style={{ color: "var(--fg)" }}>
               {run.pending_question.question}
             </p>

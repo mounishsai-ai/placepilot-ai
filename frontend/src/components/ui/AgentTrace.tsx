@@ -20,18 +20,27 @@ export interface TraceStep {
   created_at: string;
 }
 
+export interface AuditResult {
+  verdict: "clear" | "flag";
+  concerns: string[];
+  note?: string;
+  degraded?: boolean;
+}
+
 export interface AgentRun {
   id: string;
   drive_id: string;
   status: string;
-  pending_question: { question?: string; options?: string[] } | null;
+  pending_question: { question?: string; options?: string[]; audit?: AuditResult } | null;
   created_at: string;
   updated_at: string;
   trace: TraceStep[];
 }
 
 /* Blue is reserved for the model reasoning, jade for the world being acted on,
-   gold for the one moment a human is needed. Nothing else gets a colour. */
+   gold for the one moment a human is needed. Violet is the one addition: the
+   Auditor is a second model, not the orchestrator's own voice, so it needs a
+   colour that reads as "someone else checked this" rather than more reasoning. */
 const KIND: Record<string, { label: string; color: string }> = {
   thought:     { label: "Reasoning", color: "#4C79CF" },
   tool_call:   { label: "Call",      color: "#0A6B44" },
@@ -39,6 +48,7 @@ const KIND: Record<string, { label: string; color: string }> = {
   ask_human:   { label: "Asked you", color: "#D9922B" },
   decision:    { label: "Decision",  color: "#0A6B44" },
   violation:   { label: "Stopped",   color: "#C2453F" },
+  audit:       { label: "⚖ Audit",  color: "#7C5CBF" },
 };
 
 const ANSWER_PREFIX = "TPO answered:";
@@ -94,9 +104,12 @@ function Step({ step, last, live }: { step: TraceStep; last: boolean; live: bool
   const args = detail.args as Record<string, unknown> | undefined;
   const hasResult = "result" in detail;
   const result = hasResult ? summarizeResult(detail.result) : null;
+  // The audit's detail is the factual record itself, not a {args, result}
+  // shape — worth exposing raw even though neither branch below matches it.
+  const isAudit = step.kind === "audit";
   // The question itself renders once, in the Handoff card that follows — this
   // row just marks that the model decided to ask.
-  const expandable = !isAskHumanCall && (hasResult || (args && Object.keys(args).length > 0));
+  const expandable = !isAskHumanCall && (hasResult || isAudit || (args && Object.keys(args).length > 0));
 
   return (
     <motion.li
@@ -135,10 +148,20 @@ function Step({ step, last, live }: { step: TraceStep; last: boolean; live: bool
             {toolName}()
           </span>
         )}
+        {/* Every other row is the orchestrator, so it needs no label — this
+            marks the one row that is a different agent speaking. */}
+        {step.agent !== "orchestrator" && (
+          <span
+            className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
+            style={{ color: cfg.color, background: "var(--wash-2)", border: "1px solid var(--line-2)" }}
+          >
+            {step.agent}
+          </span>
+        )}
       </div>
 
       {/* Thoughts and decisions are prose the model wrote; results are data. */}
-      {step.kind === "thought" || step.kind === "decision" || step.kind === "violation" ? (
+      {step.kind === "thought" || step.kind === "decision" || step.kind === "violation" || step.kind === "audit" ? (
         <p className="text-[13px] leading-relaxed mt-1.5 max-w-[68ch]" style={{ color: "var(--ash)" }}>
           {step.summary}
         </p>
@@ -194,12 +217,14 @@ function Step({ step, last, live }: { step: TraceStep; last: boolean; live: bool
 function Handoff({
   question,
   options,
+  audit,
   answer,
   onAnswer,
   sending,
 }: {
   question: string;
   options?: string[];
+  audit?: AuditResult;
   answer?: string;
   onAnswer?: (a: string) => void;
   sending?: boolean;
@@ -235,6 +260,35 @@ function Handoff({
             {open ? "The agent is waiting for you" : "You answered"}
           </span>
         </div>
+
+        {/* The Auditor's word survives even after the handoff is answered —
+            the point is that a second opinion existed at decision time, not
+            just while it was still open. */}
+        {audit && audit.verdict === "flag" && audit.concerns.length > 0 ? (
+          <div
+            className="mb-3.5 rounded-lg p-3"
+            style={{ background: "var(--wash-2)", border: "1px solid var(--line-2)" }}
+          >
+            <div
+              className="text-[10.5px] font-semibold uppercase tracking-wider"
+              style={{ color: "#7C5CBF" }}
+            >
+              ⚖ Auditor flagged
+            </div>
+            <ul className="mt-1.5 space-y-1">
+              {audit.concerns.map((c, i) => (
+                <li key={i} className="text-[12.5px] leading-snug" style={{ color: "var(--fg)" }}>
+                  · {c}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : audit && !audit.degraded ? (
+          <div className="mb-3 flex items-center gap-1.5 text-[11px]" style={{ color: "#7C5CBF" }}>
+            <span className="font-semibold">⚖ Auditor:</span>
+            <span style={{ color: "var(--ash)" }}>{audit.note || "checked, no concerns"}</span>
+          </div>
+        ) : null}
 
         {/* The agent talks to itself in mono. Here it's addressing a person, so
             it gets the human typeface. */}
@@ -319,12 +373,13 @@ export default function AgentTrace({
           : undefined;
       if (answered) i++;
 
-      const d = (step.detail ?? {}) as { question?: string; options?: string[] };
+      const d = (step.detail ?? {}) as { question?: string; options?: string[]; audit?: AuditResult };
       rows.push(
         <Handoff
           key={step.seq}
           question={d.question || step.summary}
           options={d.options}
+          audit={d.audit}
           answer={answered}
           onAnswer={onAnswer}
           sending={sending}

@@ -19,56 +19,11 @@ these through a tool loop would add latency and failure modes for nothing.
 import json
 from typing import Any
 
-import httpx
-from loguru import logger
-
-from app.config import settings
-from app.agents.vertex_auth import get_vertex_access_token
-
-VERTEX_GENERATE_URL = (
-    "https://aiplatform.googleapis.com/v1/projects/{project}"
-    "/locations/global/publishers/google/models/{model}:generateContent"
-)
+from app.agents.vertex_json import generate_json as _generate_json_raw
 
 
 async def _generate_json(system_prompt: str, user_prompt: str) -> dict[str, Any]:
-    """One Vertex call that must come back as a JSON object.
-
-    responseMimeType pins the model to JSON so we don't have to strip markdown
-    fences, but a fence still shows up occasionally — the guard below is
-    cheaper than a retry.
-    """
-    token = get_vertex_access_token()
-    url = VERTEX_GENERATE_URL.format(
-        project=settings.GCP_PROJECT_ID, model=settings.VERTEX_ORCHESTRATOR_MODEL
-    )
-    payload = {
-        "systemInstruction": {"parts": [{"text": system_prompt}]},
-        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.4},
-    }
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-
-    try:
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError):
-        logger.warning("panel_agent: no text in Vertex response: {}", data)
-        return {}
-
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-    try:
-        parsed = json.loads(text)
-        return parsed if isinstance(parsed, dict) else {}
-    except json.JSONDecodeError:
-        logger.warning("panel_agent: unparseable JSON: {}", text[:300])
-        return {}
+    return await _generate_json_raw(system_prompt, user_prompt, caller="panel_agent")
 
 
 # ─── Before the interview ────────────────────────────────────────────────────

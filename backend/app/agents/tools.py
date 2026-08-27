@@ -36,6 +36,12 @@ class ToolContext:
         self.all_students: list[dict] = []
         self.eligible_students: list[dict] = []
         self.match_results: list[dict] = []
+        # Set by _exec_check_eligibility / _exec_rank_candidates, read by the
+        # auditor before ask_human — the executor's return value is a trimmed
+        # summary for the model, this is the fuller record the audit needs.
+        self.criteria_from: str | None = None
+        self.criteria_applied: list[str] = []
+        self.top_k_requested: int | None = None
 
 
 async def _load_students(db: AsyncSession) -> list[dict]:
@@ -186,6 +192,8 @@ async def _exec_check_eligibility(ctx: ToolContext, args: dict) -> dict:
 
     eligible_ids = {r["student_id"] for r in results if r["eligible"]}
     ctx.eligible_students = [s for s in students if s["id"] in eligible_ids]
+    ctx.criteria_from = rules_source
+    ctx.criteria_applied = [r["rule_type"] for r in rules]
 
     for r in results:
         ctx.db.add(EligibilityResult(
@@ -213,6 +221,7 @@ async def _exec_rank_candidates(ctx: ToolContext, args: dict) -> dict:
         return {"error": "call check_eligibility first — no eligible students to rank"}
 
     top_k = int(args.get("top_k") or 20)
+    ctx.top_k_requested = top_k
     embedded_ok = await index_students_for_drive(ctx.drive_id, ctx.eligible_students)
     matches = await match_students_to_jd(
         ctx.drive_id, ctx.jd_parsed, top_k=top_k, students=ctx.eligible_students,
