@@ -2,11 +2,15 @@
 Analytics API — dashboard, skill-gap, readiness, and placement trend data.
 """
 from fastapi import APIRouter, Depends
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field
+from sqlalchemy import select, func, case, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case
 from sqlalchemy.orm import selectinload
 from collections import defaultdict
 
+from app.agents.analyst_agent import generate_sql, summarize_rows, validate_readonly_sql
 from app.database import get_db
 from app.models import (
     Student, PlacementDrive, MatchScore, EligibilityResult,
@@ -15,6 +19,54 @@ from app.models import (
 from app.api.auth import get_current_user, require_role
 
 router = APIRouter()
+
+
+class AnalystQuestionRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/ask")
+async def ask_placement_analyst(
+    request: AnalystQuestionRequest,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Answers one placement-data question without exposing a database console.
+
+    SQL is generated and then constrained by the agent module before this route
+    ever hands it to PostgreSQL. A bad generation deliberately has the same
+    user-facing outcome as a failed query: helpful retry guidance, never an
+    implementation detail that could reveal the schema or invite query probing.
+    """
+    generated_sql = await generate_sql(request.question)
+    safe_sql = validate_readonly_sql(generated_sql)
+    if not safe_sql:
+        return {
+            "answer": "I couldn't answer that one — try rephrasing it as a placement-data question.",
+            "sql": "",
+            "row_count": 0,
+            "sample_rows": [],
+        }
+
+    try:
+        result = await db.execute(text(safe_sql))
+        rows = [dict(row) for row in result.mappings().all()]
+    except SQLAlchemyError:
+        await db.rollback()
+        return {
+            "answer": "I couldn't answer that one — try rephrasing it as a placement-data question.",
+            "sql": "",
+            "row_count": 0,
+            "sample_rows": [],
+        }
+
+    answer = await summarize_rows(request.question, safe_sql, rows)
+    return {
+        "answer": answer,
+        "sql": safe_sql,
+        "row_count": len(rows),
+        "sample_rows": jsonable_encoder(rows[:20]),
+    }
 
 
 @router.get("/dashboard")

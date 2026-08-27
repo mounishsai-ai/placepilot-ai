@@ -96,6 +96,7 @@ export const analyticsAPI = {
   driveStats: (id: string) => api.get(`/api/analytics/drives/${id}`),
   exceptions: () => api.get("/api/analytics/exceptions"),
   auditTrail: () => api.get("/api/analytics/audit-trail"),
+  ask: (question: string) => api.post("/api/analytics/ask", { question }),
 };
 
 // ─── Schedule ─────────────────────────────────────────────────────────────
