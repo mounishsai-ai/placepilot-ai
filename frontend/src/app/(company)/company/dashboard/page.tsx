@@ -9,6 +9,7 @@ import {
 import TopBar from "@/components/layout/TopBar";
 import PortalHeaderActions from "@/components/layout/PortalHeaderActions";
 import MyDrives from "@/components/company/MyDrives";
+import CompanyNotices from "@/components/company/CompanyNotices";
 import { drivesAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import toast from "react-hot-toast";
@@ -44,8 +45,8 @@ export default function CompanyDashboard() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<Step>("upload");
-  /** Posting a drive vs following the ones already posted. */
-  const [view, setView] = useState<"post" | "mine">("post");
+  /** Posting a drive, following the ones already posted, or messaging the TPO. */
+  const [view, setView] = useState<"post" | "mine" | "notices">("post");
   const [jdText, setJdText] = useState("");
   const [parsedJD, setParsedJD] = useState<Record<string, unknown> | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -174,6 +175,7 @@ export default function CompanyDashboard() {
           {([
             { key: "post", label: "Post a Drive" },
             { key: "mine", label: "My Drives" },
+            { key: "notices", label: "Notices" },
           ] as const).map((t) => {
             const on = view === t.key;
             return (
@@ -194,6 +196,8 @@ export default function CompanyDashboard() {
         </div>
 
         {view === "mine" && <MyDrives />}
+
+        {view === "notices" && <CompanyNotices />}
 
         {view === "post" && (<>
         {/* Step indicator */}

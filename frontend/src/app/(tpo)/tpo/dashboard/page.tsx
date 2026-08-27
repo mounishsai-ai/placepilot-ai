@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 import {
   Briefcase, Award, TrendingUp,
-  Play, Zap, X,
+  Play, Zap, Search, Check, Mail,
   ShieldAlert, History, Bot, UserCheck,
 } from "lucide-react";
 
@@ -14,7 +14,7 @@ import TopBar from "@/components/layout/TopBar";
 import MetricCard from "@/components/ui/MetricCard";
 import AgentEventFeed from "@/components/ui/AgentEventFeed";
 import AgentOrb from "@/components/ui/AgentOrb";
-import { analyticsAPI, drivesAPI } from "@/lib/api";
+import { analyticsAPI, drivesAPI, noticesAPI } from "@/lib/api";
 import { useDashboardStore } from "@/lib/store";
 import { useTPOWebSocket } from "@/lib/websocket";
 import toast from "react-hot-toast";
@@ -78,16 +78,19 @@ function mergeEvents(
 
 export default function TPODashboard() {
   const { agentEvents } = useDashboardStore();
-  const { connected } = useTPOWebSocket();
+  useTPOWebSocket();
 
   const [kpis, setKpis] = useState<Record<string, unknown> | null>(null);
   const [drives, setDrives] = useState<Record<string, unknown>[]>([]);
   const [pendingDrives, setPendingDrives] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [exceptions, setExceptions] = useState<Record<string, unknown>[]>([]);
+  const [exceptionsTotal, setExceptionsTotal] = useState(0);
+  const [exceptionSearch, setExceptionSearch] = useState("");
+  const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
+  const [notices, setNotices] = useState<Record<string, unknown>[]>([]);
   const [auditTrail, setAuditTrail] = useState<Record<string, unknown>[]>([]);
   const [exceptionsLoading, setExceptionsLoading] = useState(true);
-  const [alertDismissed, setAlertDismissed] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -109,12 +112,15 @@ export default function TPODashboard() {
     }
 
     try {
-      const [excRes, auditRes] = await Promise.all([
+      const [excRes, auditRes, noticesRes] = await Promise.all([
         analyticsAPI.exceptions(),
         analyticsAPI.auditTrail(),
+        noticesAPI.list(),
       ]);
-      setExceptions(excRes.data);
+      setExceptions(excRes.data.items);
+      setExceptionsTotal(excRes.data.total);
       setAuditTrail(auditRes.data);
+      setNotices(noticesRes.data);
     } catch {
       // non-fatal
     } finally {
@@ -123,6 +129,36 @@ export default function TPODashboard() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleApproveException = async (id: string) => {
+    setApprovingIds((prev) => new Set(prev).add(id));
+    try {
+      await analyticsAPI.approveException(id);
+      toast.success("Approved — added to the shortlist");
+      // The fade-out is driven by AnimatePresence noticing the item leave
+      // this array, not by the approvingIds flag — that flag just disables
+      // the button so a slow network can't double-submit.
+      setExceptions((prev) => prev.filter((e) => e.id !== id));
+      setExceptionsTotal((prev) => Math.max(0, prev - 1));
+    } catch {
+      toast.error("Couldn't approve — try again");
+      setApprovingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const filteredExceptions = exceptions.filter((exc) => {
+    if (!exceptionSearch.trim()) return true;
+    const q = exceptionSearch.toLowerCase();
+    return (
+      (exc.student_name as string ?? "").toLowerCase().includes(q) ||
+      (exc.roll_no as string ?? "").toLowerCase().includes(q) ||
+      (exc.company as string ?? "").toLowerCase().includes(q)
+    );
+  });
 
   const handleRunPipeline = async (driveId: string, company: string) => {
     try {
@@ -148,56 +184,19 @@ export default function TPODashboard() {
         <TopBar
           title="Placement Dashboard"
           subtitle="Real-time AI placement operations"
-          connected={connected}
         >
           {pendingDrives.length > 0 && (
             <span
-              className="inline-flex items-center gap-2 text-[12px] font-semibold px-3 py-1.5 rounded-full"
+              className="inline-flex items-center gap-2 text-[12px] font-semibold px-3.5 py-1.5 rounded-full"
               style={{ background: "var(--gold-lt)", border: "1px solid var(--gold-ln)", color: "var(--gold-d)" }}
             >
               <AgentOrb size={18} waiting />
-              {pendingDrives.length} needs you
+              Hey TPO, {pendingDrives.length} drive{pendingDrives.length > 1 ? "s are" : " is"} waiting for your approval!
             </span>
           )}
         </TopBar>
 
         <main className="flex-1 p-8 space-y-8">
-          {/* ── Pending Approvals Banner ───────────────────────────────── */}
-          {/* Gold, because gold means one thing in this app: the agent has
-              stopped and needs a person. Dismissible — the drives keep waiting
-              in the list either way, so this is a nudge, not a gate. */}
-          {pendingDrives.length > 0 && !alertDismissed && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="relative rounded-xl p-4 pr-11 flex items-center gap-3.5"
-              style={{ background: "var(--gold-lt)", border: "1px solid var(--gold-ln)" }}
-            >
-              <div
-                className="w-[26px] h-[26px] rounded-lg grid place-items-center text-white text-sm font-bold flex-shrink-0"
-                style={{ background: "var(--gold)" }}
-              >
-                !
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-[13px]" style={{ color: "var(--gold-d)" }}>
-                  {pendingDrives.length} drive{pendingDrives.length > 1 ? "s are" : " is"} waiting on your approval
-                </p>
-                <p className="ct-mono text-[10.5px] mt-0.5 truncate" style={{ color: "#A0782F" }}>
-                  {pendingDrives.map((d) => d.title as string).join(" · ")}
-                </p>
-              </div>
-              <button
-                onClick={() => setAlertDismissed(true)}
-                aria-label="Dismiss"
-                className="absolute top-2.5 right-2.5 w-6 h-6 rounded-md grid place-items-center transition-colors"
-                style={{ color: "#B08A45" }}
-              >
-                <X size={14} />
-              </button>
-            </motion.div>
-          )}
-
           {/* ── KPI Row ───────────────────────────────────────────────── */}
           <div className="grid grid-cols-4 gap-5">
             <MetricCard
@@ -264,17 +263,7 @@ export default function TPODashboard() {
                 {/* The agent's own mark, present wherever it's speaking. Goes
                     gold when a drive is sitting waiting on the TPO. */}
                 <AgentOrb size={26} waiting={pendingDrives.length > 0} />
-                <h2 className="text-base">Agent activity</h2>
-                {connected && (
-                  <span className="ml-auto badge-green badge text-[10px]">
-                    <span className="ct-live-dot" /> Live
-                  </span>
-                )}
-                {!connected && combinedFeed.length > 0 && (
-                  <span className="ml-auto text-[10px]" style={{ color: "var(--faint)" }}>
-                    historical
-                  </span>
-                )}
+                <h2 className="text-base">Onyx activity</h2>
               </div>
               <AgentEventFeed events={combinedFeed} />
             </div>
@@ -288,51 +277,83 @@ export default function TPODashboard() {
               {/* Jade, not gold: these are flagged for a look when convenient.
                   Gold is only for a run that has actually stopped and is blocked
                   on the TPO — spending it here would dilute the one signal. */}
-              <div className="flex items-center gap-2 mb-5">
+              <div className="flex items-center gap-2 mb-4">
                 <ShieldAlert size={16} style={{ color: "var(--jade-d)" }} />
                 <h2 className="text-base"><em>Exceptions</em> — needs your review</h2>
                 <span className="ml-auto badge-green badge text-[10px]">
-                  {exceptionsLoading ? "…" : exceptions.length}
+                  {exceptionsLoading ? "…" : exceptionsTotal}
                 </span>
               </div>
-              <p className="text-xs mb-4" style={{ color: "var(--ash)" }}>
+              <p className="text-xs mb-3" style={{ color: "var(--ash)" }}>
                 Students who just barely missed eligibility — a few tenths of CGPA,
                 or one backlog over the limit. Not auto-rejected; flagged for you.
               </p>
+              <div
+                className="flex items-center gap-2 rounded-lg px-3 py-1.5 mb-3"
+                style={{ background: "var(--wash-2)", border: "1px solid var(--line)" }}
+              >
+                <Search size={13} style={{ color: "var(--faint)" }} />
+                <input
+                  type="text"
+                  placeholder="Search name, roll no, or company..."
+                  value={exceptionSearch}
+                  onChange={(e) => setExceptionSearch(e.target.value)}
+                  className="bg-transparent text-sm outline-none flex-1"
+                  style={{ color: "var(--fg)" }}
+                />
+              </div>
               {exceptionsLoading ? (
                 <div className="space-y-2">
-                  {[1, 2, 3].map((i) => <div key={i} className="h-14 rounded-xl bg-white/[0.04] animate-pulse" />)}
+                  {[1, 2, 3].map((i) => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: "var(--line-2)" }} />)}
                 </div>
-              ) : exceptions.length === 0 ? (
-                <div className="text-center text-white/30 text-sm py-10">
-                  No borderline cases right now.
+              ) : filteredExceptions.length === 0 ? (
+                <div className="text-center text-sm py-10" style={{ color: "var(--faint)" }}>
+                  {exceptions.length === 0 ? "No borderline cases right now." : "No matches for that search."}
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
-                  {exceptions.map((exc) => {
-                    const reasons = (exc.reasons as { rule: string; passed: boolean; reason: string }[]) ?? [];
-                    const failedReasons = reasons.filter((r) => !r.passed);
-                    return (
-                      <div
-                        key={exc.id as string}
-                        className="rounded-xl p-3"
-                        style={{ background: "var(--wash-2)", border: "1px solid #CBEDDD" }}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium text-sm">{exc.student_name as string}</span>
-                          <span className={`badge text-[10px] ${exc.eligible ? "badge-green" : "badge-rose"}`}>
-                            {exc.eligible ? "Eligible" : "Not eligible"}
-                          </span>
-                        </div>
-                        <div className="text-white/35 text-[11px] mb-1.5">
-                          {exc.roll_no as string} · {exc.company as string ?? exc.drive_title as string}
-                        </div>
-                        {failedReasons.map((r, i) => (
-                          <div key={i} className="text-rose-300/70 text-[11px]">{r.reason}</div>
-                        ))}
-                      </div>
-                    );
-                  })}
+                  <AnimatePresence initial={false}>
+                    {filteredExceptions.map((exc) => {
+                      const id = exc.id as string;
+                      const reasons = (exc.reasons as { rule: string; passed: boolean; reason: string }[]) ?? [];
+                      const failedReasons = reasons.filter((r) => !r.passed);
+                      const approving = approvingIds.has(id);
+                      return (
+                        <motion.div
+                          key={id}
+                          layout
+                          initial={{ opacity: 1 }}
+                          exit={{ opacity: 0, scale: 0.96, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0 }}
+                          transition={{ duration: 0.25 }}
+                          className="rounded-xl p-3 overflow-hidden"
+                          style={{ background: "var(--wash-2)", border: "1px solid #CBEDDD" }}
+                        >
+                          <div className="flex items-center justify-between mb-1 gap-2">
+                            <span className="font-medium text-sm">{exc.student_name as string}</span>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <span className={`badge text-[10px] ${exc.eligible ? "badge-green" : "badge-rose"}`}>
+                                {exc.eligible ? "Eligible" : "Not eligible"}
+                              </span>
+                              <button
+                                onClick={() => handleApproveException(id)}
+                                disabled={approving}
+                                className="ct-mono inline-flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all disabled:opacity-50"
+                                style={{ background: "var(--jade)", color: "#fff" }}
+                              >
+                                <Check size={11} /> {approving ? "Approving…" : "Approve"}
+                              </button>
+                            </div>
+                          </div>
+                          <div className="text-[11px] mb-1.5" style={{ color: "var(--faint)" }}>
+                            {exc.roll_no as string} · {exc.company as string ?? exc.drive_title as string}
+                          </div>
+                          {failedReasons.map((r, i) => (
+                            <div key={i} className="text-[11px]" style={{ color: "#98332E" }}>{r.reason}</div>
+                          ))}
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
                 </div>
               )}
             </div>
@@ -383,6 +404,51 @@ export default function TPODashboard() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* ── Notices from companies ───────────────────────────────────── */}
+          {/* A real, authored message from a specific HR user — not the
+              auto-generated pipeline_started/pipeline_error blips in the
+              Onyx activity feed above, which stay exactly as they are (the
+              audit trail). This is the actual communication surface. */}
+          <div className="glass-card">
+            <div className="flex items-center gap-2 mb-4">
+              <Mail size={16} style={{ color: "var(--jade-d)" }} />
+              <h2 className="text-base">Notices <em>from companies</em></h2>
+              <span className="ml-auto badge-green badge text-[10px]">
+                {exceptionsLoading ? "…" : notices.length}
+              </span>
+            </div>
+            {exceptionsLoading ? (
+              <div className="space-y-2">
+                {[1, 2].map((i) => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: "var(--line-2)" }} />)}
+              </div>
+            ) : notices.length === 0 ? (
+              <div className="text-center text-sm py-10" style={{ color: "var(--faint)" }}>
+                No notices yet — companies can send one from their portal.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {notices.map((n) => (
+                  <div
+                    key={n.id as string}
+                    className="rounded-xl p-3"
+                    style={{ background: "var(--wash-2)", border: "1px solid var(--line)" }}
+                  >
+                    <div className="flex items-center justify-between mb-1 gap-2">
+                      <span className="font-medium text-sm">{n.subject as string}</span>
+                      <span className="ct-mono text-[10px] flex-shrink-0" style={{ color: "var(--faint)" }}>
+                        {formatDistanceToNow(new Date(n.created_at as string), { addSuffix: true })}
+                      </span>
+                    </div>
+                    <p className="text-xs mb-1.5" style={{ color: "var(--ash)" }}>{n.message as string}</p>
+                    <div className="ct-mono text-[10px]" style={{ color: "var(--jade-d)" }}>
+                      {n.company as string}{n.drive_title ? ` · ${n.drive_title as string}` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </main>
       </div>

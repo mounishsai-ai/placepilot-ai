@@ -56,31 +56,32 @@ function DriveScheduleCard({ group, highlight }: { group: DriveGroup; highlight:
   const completed = group.slots.filter((s) => s.status === "completed").length;
   const selected  = group.slots.filter((s) => s.result === "selected").length;
   return (
-    <div ref={ref} className={`glass-card overflow-hidden p-0 ${highlight ? "ring-1 ring-blue-400/40" : ""}`}>
+    <div ref={ref} className="glass-card overflow-hidden p-0" style={highlight ? { boxShadow: "0 0 0 1px var(--jade-mid)" } : undefined}>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-6 py-4 border-b border-white/[0.06] flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+        className="w-full px-6 py-4 flex items-center justify-between transition-colors hover:bg-[var(--wash-2)]"
+        style={{ borderBottom: "1px solid var(--line)" }}
       >
         <div className="flex items-center gap-3 text-left">
-          <Building2 size={15} className="text-blue-400 flex-shrink-0" />
+          <Building2 size={15} className="flex-shrink-0" style={{ color: "var(--jade)" }} />
           <div>
-            <div className="text-white font-semibold text-sm">{group.driveTitle}</div>
-            <div className="text-white/35 text-xs mt-0.5">
+            <div className="font-semibold text-sm" style={{ color: "var(--fg)" }}>{group.driveTitle}</div>
+            <div className="text-xs mt-0.5" style={{ color: "var(--faint)" }}>
               {group.slots.length} slots &middot; {upcoming} upcoming &middot; {completed} done &middot; {selected} selected
             </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <span className="badge badge-blue text-[10px]">{group.slots.length} slots</span>
-          {open ? <ChevronUp size={16} className="text-white/30" /> : <ChevronDown size={16} className="text-white/30" />}
+          {open ? <ChevronUp size={16} style={{ color: "var(--faint)" }} /> : <ChevronDown size={16} style={{ color: "var(--faint)" }} />}
         </div>
       </button>
       {open && (
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/[0.06]">
+            <tr style={{ borderBottom: "1px solid var(--line)" }}>
               {["Time", "Student", "Roll No", "Round", "Panel", "Venue", "Status"].map((h) => (
-                <th key={h} className="text-left text-white/35 font-medium text-xs uppercase tracking-wider px-5 py-3">{h}</th>
+                <th key={h} className="text-left font-medium text-xs uppercase tracking-wider px-5 py-3" style={{ color: "var(--faint)" }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -91,17 +92,18 @@ function DriveScheduleCard({ group, highlight }: { group: DriveGroup; highlight:
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: Math.min(i, 20) * 0.03 }}
-                className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+                className="transition-colors hover:bg-[var(--wash-2)]"
+                style={{ borderBottom: "1px solid var(--line-2)" }}
               >
                 <td className="px-5 py-3">
-                  <div className="text-white font-medium">{format(new Date(slot.slot_start), "hh:mm a")}</div>
-                  <div className="text-white/30 text-[11px]">{format(new Date(slot.slot_start), "d MMM yyyy")}</div>
+                  <div className="font-medium" style={{ color: "var(--fg)" }}>{format(new Date(slot.slot_start), "hh:mm a")}</div>
+                  <div className="text-[11px]" style={{ color: "var(--faint)" }}>{format(new Date(slot.slot_start), "d MMM yyyy")}</div>
                 </td>
-                <td className="px-5 py-3 text-white">{slot.student_name ?? "-"}</td>
-                <td className="px-5 py-3 text-white/50 font-mono text-xs">{slot.student_roll ?? "-"}</td>
+                <td className="px-5 py-3" style={{ color: "var(--fg)" }}>{slot.student_name ?? "-"}</td>
+                <td className="px-5 py-3 font-mono text-xs" style={{ color: "var(--ash)" }}>{slot.student_roll ?? "-"}</td>
                 <td className="px-5 py-3"><span className="badge badge-blue text-[10px] capitalize">{slot.round_type ?? "-"}</span></td>
-                <td className="px-5 py-3 text-white/50 text-xs">{slot.panel ?? "-"}</td>
-                <td className="px-5 py-3 text-white/50 text-xs">{slot.venue ?? "-"}</td>
+                <td className="px-5 py-3 text-xs" style={{ color: "var(--ash)" }}>{slot.panel ?? "-"}</td>
+                <td className="px-5 py-3 text-xs" style={{ color: "var(--ash)" }}>{slot.venue ?? "-"}</td>
                 <td className="px-5 py-3">
                   {slot.status === "completed" ? (
                     <span className={`badge text-[10px] ${slot.result === "selected" ? "badge-green" : "badge-rose"}`}>
@@ -219,20 +221,12 @@ function SchedulePageInner() {
         start_datetime: toNaiveISO(startDatetime),
         end_datetime: toNaiveISO(endDatetime),
       });
-      toast.success("Round created! Running auto-schedule...");
-      const scheduleRes = await scheduleAPI.autoSchedule(res.data.id);
-      const { scheduled, conflicts } = scheduleRes.data;
-      if (scheduled > 0) {
-        toast.success(`${scheduled} interview slots auto-allocated via FCFS!`);
-      } else {
-        toast.error(
-          conflicts?.length > 0
-            ? `No slots allocated — ${conflicts.length} conflicts.`
-            : "No slots allocated — does this drive have an approved shortlist yet?"
-        );
-      }
+      toast.success("Round created! Scheduling agent started — watch it in the agent dock.");
+      await scheduleAPI.runAgent(res.data.id);
       setShowCreateRound(false);
-      fetchSlots();
+      // The agent runs in the background (propose → validate → re-plan →
+      // commit); give it a moment before refetching so a fast run's slots show up.
+      setTimeout(fetchSlots, 4000);
     } catch (err: unknown) {
       const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
       toast.error(msg ?? "Failed to create schedule");
@@ -285,25 +279,27 @@ function SchedulePageInner() {
           </div>
 
           {/* Tab bar */}
-          <div className="flex items-center gap-1 border-b border-white/[0.06]">
+          <div className="flex items-center gap-1" style={{ borderBottom: "1px solid var(--line)" }}>
             <button
               onClick={() => setScheduleTab("active")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors border-b-2 ${
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors border-b-2"
+              style={
                 scheduleTab === "active"
-                  ? "border-blue-400 text-blue-300 bg-blue-500/[0.06]"
-                  : "border-transparent text-white/40 hover:text-white/70"
-              }`}
+                  ? { borderColor: "var(--jade)", color: "var(--jade-d)", background: "var(--wash)" }
+                  : { borderColor: "transparent", color: "var(--faint)" }
+              }
             >
               <Clock size={14} /> Active
               <span className="badge badge-blue text-[10px] ml-1">{upcomingCount}</span>
             </button>
             <button
               onClick={() => setScheduleTab("archived")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors border-b-2 ${
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors border-b-2"
+              style={
                 scheduleTab === "archived"
-                  ? "border-emerald-400 text-emerald-300 bg-emerald-500/[0.06]"
-                  : "border-transparent text-white/40 hover:text-white/70"
-              }`}
+                  ? { borderColor: "var(--jade)", color: "var(--jade-d)", background: "var(--wash)" }
+                  : { borderColor: "transparent", color: "var(--faint)" }
+              }
             >
               <Archive size={14} /> Completed
               {completedCount > 0 && (
@@ -312,19 +308,24 @@ function SchedulePageInner() {
             </button>
             {/* Drive filter */}
             <div className="flex items-center gap-2 ml-auto">
-              <Building2 size={14} className="text-white/30" />
+              <Building2 size={14} style={{ color: "var(--faint)" }} />
               <select
                 value={filterDriveId}
                 onChange={(e) => setFilterDriveId(e.target.value)}
-                className="bg-white/[0.06] border border-white/[0.1] text-white text-xs rounded-lg px-3 py-1.5 outline-none"
+                className="text-xs rounded-lg px-3 py-1.5 outline-none"
+                style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
               >
-                <option value="" className="bg-gray-900">All Drives</option>
+                <option value="">All Drives</option>
                 {allGroups.map((g) => (
-                  <option key={g.driveId} value={g.driveId} className="bg-gray-900">{g.driveTitle}</option>
+                  <option key={g.driveId} value={g.driveId}>{g.driveTitle}</option>
                 ))}
               </select>
               {filterDriveId && (
-                <button onClick={() => setFilterDriveId("")} className="text-white/30 hover:text-white/60 text-xs">
+                <button
+                  onClick={() => setFilterDriveId("")}
+                  className="text-xs transition-colors hover:opacity-80"
+                  style={{ color: "var(--faint)" }}
+                >
                   Clear
                 </button>
               )}
@@ -335,18 +336,20 @@ function SchedulePageInner() {
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="glass-card border border-blue-500/20"
+              className="glass-card"
+              style={{ border: "1px solid var(--gold-ln)" }}
             >
-              <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-                <Calendar size={16} className="text-blue-400" /> Create Interview Round + Auto-Schedule
+              <h3 className="font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--fg)" }}>
+                <Calendar size={16} style={{ color: "var(--jade)" }} /> Create Interview Round + Auto-Schedule
               </h3>
               <div className="grid grid-cols-3 gap-4 mb-4">
                 <div>
-                  <label className="text-white/40 text-xs mb-1.5 block">Drive</label>
+                  <label className="text-xs mb-1.5 block" style={{ color: "var(--ash)" }}>Drive</label>
                   <select
                     value={driveId}
                     onChange={(e) => setDriveId(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
+                    className="w-full text-sm rounded-xl px-3 py-2 outline-none"
+                    style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
                   >
                     {drives.length === 0 && <option value="">No drives found</option>}
                     {drives.map((d) => (
@@ -355,11 +358,12 @@ function SchedulePageInner() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-white/40 text-xs mb-1.5 block">Round Type</label>
+                  <label className="text-xs mb-1.5 block" style={{ color: "var(--ash)" }}>Round Type</label>
                   <select
                     value={roundType}
                     onChange={(e) => setRoundType(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
+                    className="w-full text-sm rounded-xl px-3 py-2 outline-none"
+                    style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
                   >
                     <option value="aptitude">Aptitude Test</option>
                     <option value="technical">Technical Interview</option>
@@ -368,31 +372,34 @@ function SchedulePageInner() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-white/40 text-xs mb-1.5 block">Slot Duration (min)</label>
+                  <label className="text-xs mb-1.5 block" style={{ color: "var(--ash)" }}>Slot Duration (min)</label>
                   <input
                     type="number"
                     value={slotDuration}
                     onChange={(e) => setSlotDuration(e.target.value)}
                     min="15" max="120" step="15"
-                    className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
+                    className="w-full text-sm rounded-xl px-3 py-2 outline-none"
+                    style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
                   />
                 </div>
                 <div>
-                  <label className="text-white/40 text-xs mb-1.5 block">Window Start</label>
+                  <label className="text-xs mb-1.5 block" style={{ color: "var(--ash)" }}>Window Start</label>
                   <input
                     type="datetime-local"
                     value={startDatetime}
                     onChange={(e) => setStartDatetime(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
+                    className="w-full text-sm rounded-xl px-3 py-2 outline-none"
+                    style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
                   />
                 </div>
                 <div>
-                  <label className="text-white/40 text-xs mb-1.5 block">Window End</label>
+                  <label className="text-xs mb-1.5 block" style={{ color: "var(--ash)" }}>Window End</label>
                   <input
                     type="datetime-local"
                     value={endDatetime}
                     onChange={(e) => setEndDatetime(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/10 text-white text-sm rounded-xl px-3 py-2 outline-none"
+                    className="w-full text-sm rounded-xl px-3 py-2 outline-none"
+                    style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
                   />
                 </div>
               </div>
@@ -400,7 +407,7 @@ function SchedulePageInner() {
                 <button onClick={() => setShowCreateRound(false)} className="btn-ghost">Cancel</button>
                 <button onClick={handleCreateRound} disabled={creating} className="btn-primary flex items-center gap-2">
                   {creating ? (
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: "rgba(255,255,255,.3)", borderTopColor: "#fff" }} />
                   ) : <Calendar size={14} />}
                   Create & Auto-Schedule
                 </button>
@@ -413,7 +420,7 @@ function SchedulePageInner() {
               {[1, 2].map((i) => <div key={i} className="glass-card h-32 animate-pulse" />)}
             </div>
           ) : visibleGroups.length === 0 ? (
-            <div className="glass-card text-center py-16 text-white/30 text-sm">
+            <div className="glass-card text-center py-16 text-sm" style={{ color: "var(--faint)" }}>
               No interview slots yet. Create a round above to auto-schedule shortlisted candidates.
             </div>
           ) : (

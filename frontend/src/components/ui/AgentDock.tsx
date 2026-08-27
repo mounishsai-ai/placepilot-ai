@@ -58,10 +58,38 @@ export default function AgentDock() {
      it resumed. */
   const answeredAt = useRef(0);
 
+  /* /live only ever returns RUNNING/PAUSED runs, so a run that finishes
+     between polls just vanishes from the list — including a "decision" run
+     that ended by explaining why it couldn't do what the TPO asked (no
+     violation, no ask_human, just a final message). Track what was visible
+     last poll so a run that drops out can be given one last fetch to surface
+     that final word instead of disappearing silently (observed live
+     2026-08-28 — a TPO's answer produced a real "I can't do that" reply that
+     nobody ever saw). */
+  const prevIdsRef = useRef<Set<string>>(new Set());
+
   const fetchLive = useCallback(async () => {
     try {
       const res = await agentAPI.live();
-      setRuns(res.data ?? []);
+      const newRuns: LiveRun[] = res.data ?? [];
+      const newIds = new Set(newRuns.map((r) => r.id));
+
+      for (const id of prevIdsRef.current) {
+        if (newIds.has(id)) continue;
+        agentAPI.getRun(id).then((r) => {
+          const trace = r.data?.trace ?? [];
+          const last = trace[trace.length - 1];
+          if (!last) return;
+          if (r.data.status === "completed") {
+            toast(last.summary, { icon: "🤖", duration: 7000 });
+          } else if (r.data.status === "failed") {
+            toast.error(last.summary || "The agent hit an error and stopped.", { duration: 7000 });
+          }
+        }).catch(() => {});
+      }
+
+      prevIdsRef.current = newIds;
+      setRuns(newRuns);
     } catch {
       /* a failed poll is not worth a toast — the next one is 2s away */
     }
@@ -228,7 +256,7 @@ export default function AgentDock() {
           className="text-[12px] font-semibold px-3 py-1.5 rounded-lg shrink-0 inline-flex items-center gap-1.5"
           style={{ color: "var(--jade-d)", background: "var(--wash)", border: "1px solid #CBEDDD" }}
         >
-          Watch it think <ExternalLink size={11} />
+          Watch Onyx think <ExternalLink size={11} />
         </Link>
       </div>
     </div>

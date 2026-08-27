@@ -299,6 +299,27 @@ class Notification(Base):
     student = relationship("Student", back_populates="notifications")
 
 
+# ─── Notices (HR → TPO) ────────────────────────────────────────────────────────
+# A real, authored message from a specific company to the placement office —
+# distinct from the AgentEvent pipeline_started/pipeline_error blips below,
+# which stay exactly as they are (that's the audit trail). The seed data has
+# exactly one TPO account and every TPO endpoint is role-scoped rather than
+# per-user, so there's no recipient to pick: every notice is addressed to
+# "the placement office" and any TPO can read it.
+
+class Notice(Base):
+    __tablename__ = "notices"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False)
+    drive_id = Column(String, ForeignKey("placement_drives.id"), nullable=True)
+    subject = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    company = relationship("Company")
+    drive = relationship("PlacementDrive")
+
+
 # ─── Agent Events (Audit Log) ─────────────────────────────────────────────────
 
 class AgentEvent(Base):
@@ -347,8 +368,7 @@ class AgentRun(Base):
 
 
 class AgentTrace(Base):
-    """One entry in the live trace register — the schema from
-    AGENTIC_OVERHAUL.md §6 Step 1. This is what the trace UI renders."""
+    """One entry in the live trace register that the trace UI renders."""
     __tablename__ = "agent_trace"
     id = Column(String, primary_key=True, default=gen_uuid)
     run_id = Column(String, ForeignKey("agent_runs.id"), nullable=False, index=True)

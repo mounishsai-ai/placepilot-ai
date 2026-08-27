@@ -3,6 +3,7 @@ Shared one-shot JSON generation over Vertex — the shape panel_agent.py and
 auditor_agent.py both need: no tools, no conversation, one document out.
 Split out once a second caller needed it rather than duplicated a second time.
 """
+import asyncio
 import json
 from typing import Any
 
@@ -16,6 +17,10 @@ VERTEX_GENERATE_URL = (
     "https://aiplatform.googleapis.com/v1/projects/{project}"
     "/locations/global/publishers/google/models/{model}:generateContent"
 )
+
+# Same transient-error retry as orchestrator.py's _call_gemini — a 429/503
+# here previously killed the Analyst/Auditor/Panel call outright.
+_RETRY_DELAYS_S = [5, 15]
 
 
 async def generate_json(system_prompt: str, user_prompt: str, *, caller: str = "agent") -> dict[str, Any]:
@@ -35,15 +40,33 @@ async def generate_json(system_prompt: str, user_prompt: str, *, caller: str = "
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.4},
     }
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
+        for attempt, delay in enumerate([*_RETRY_DELAYS_S, None]):
+            resp = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json=payload)
+            if resp.status_code not in (429, 503) or delay is None:
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            logger.warning(
+                "{}: Vertex {}, retrying in {}s (attempt {}/{})",
+                caller, resp.status_code, delay, attempt + 1, len(_RETRY_DELAYS_S),
+            )
+            await asyncio.sleep(delay)
 
     try:
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        parts = data["candidates"][0]["content"]["parts"]
     except (KeyError, IndexError):
-        logger.warning("{}: no text in Vertex response: {}", caller, data)
+        logger.warning("{}: no parts in Vertex response: {}", caller, data)
         return {}
+
+    # gemini-2.5-flash is a thinking model: it can emit a "thought" part before
+    # the real answer part, so parts[0] is not reliably the JSON we want — skip
+    # any part marked as a thought (orchestrator.py's loop does the equivalent
+    # by treating all text as trace-worthy; here there's only one answer part).
+    text_parts = [p["text"] for p in parts if "text" in p and not p.get("thought")]
+    if not text_parts:
+        logger.warning("{}: no non-thought text in Vertex response: {}", caller, data)
+        return {}
+    text = "".join(text_parts)
 
     text = text.strip()
     if text.startswith("```"):
