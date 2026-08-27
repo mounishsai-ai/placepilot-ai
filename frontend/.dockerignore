@@ -1,0 +1,13 @@
+# Build context hygiene. Without this, COPY . . drags the local build in:
+# .next from a dev server (built against localhost) landing on top of the
+# production build, node_modules with Windows-native binaries overwriting the
+# ones the deps stage just installed for Linux, and .env.local — which would
+# quietly outrank the NEXT_PUBLIC_* build args this image is built with.
+node_modules
+.next
+.env.local
+.env*.local
+npm_install.log
+.git
+Dockerfile
+.dockerignore
