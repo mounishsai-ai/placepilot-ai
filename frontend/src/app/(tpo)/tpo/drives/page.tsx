@@ -7,6 +7,7 @@ import {
   Building2, Calendar, TrendingUp, Zap, Search, Radio,
 } from "lucide-react";
 import Link from "next/link";
+import { clsx } from "clsx";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import { drivesAPI, scheduleAPI } from "@/lib/api";
@@ -961,12 +962,10 @@ export default function DrivesPage() {
             ].map((stat) => (
               <div
                 key={stat.label}
-                className="rounded-xl py-4 px-5"
-                style={
-                  stat.gold && stat.value > 0
-                    ? { background: "var(--gold-lt)", border: "1px solid var(--gold-ln)" }
-                    : { background: "var(--card)", border: "1px solid var(--line)" }
-                }
+                className={clsx(
+                  "stat-gloss py-4 px-5",
+                  stat.gold && stat.value > 0 && "stat-gloss-gold"
+                )}
               >
                 <div
                   className="font-display text-[28px] font-bold leading-none"
