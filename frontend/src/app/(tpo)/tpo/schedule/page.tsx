@@ -249,19 +249,27 @@ function SchedulePageInner() {
 
         <main className="p-8 space-y-6">
           <div className="grid grid-cols-4 gap-4">
+            {/* "Upcoming" was amber, which the palette reserves for the agent
+                stopping to ask a person — nothing here is waiting on anyone,
+                so it reads as plain ink instead. */}
             {[
-              { label: "Total Slots",  value: stats.total,    icon: Calendar,     color: "text-white" },
-              { label: "Completed",    value: stats.completed, icon: CheckCircle, color: "text-emerald-400" },
-              { label: "Selected",     value: stats.selected,  icon: Users,       color: "text-blue-400" },
-              { label: "Upcoming",     value: stats.upcoming,  icon: Clock,       color: "text-amber-400" },
+              { label: "Total Slots", value: stats.total,     icon: Calendar,    fg: "var(--fg)",     tint: "rgba(11,23,20,.05)"   },
+              { label: "Completed",   value: stats.completed, icon: CheckCircle, fg: "var(--jade-d)", tint: "rgba(15,169,104,.10)" },
+              { label: "Selected",    value: stats.selected,  icon: Users,       fg: "var(--jade)",   tint: "rgba(18,184,114,.10)" },
+              { label: "Upcoming",    value: stats.upcoming,  icon: Clock,       fg: "var(--fg)",     tint: "rgba(11,23,20,.05)"   },
             ].map((stat) => (
-              <div key={stat.label} className="glass-card flex items-center gap-3 py-4">
-                <div className="w-10 h-10 rounded-xl bg-white/[0.04] flex items-center justify-center">
-                  <stat.icon size={18} className={stat.color} />
+              <div key={stat.label} className="stat-gloss flex items-center gap-3 py-4 px-5">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: stat.tint, color: stat.fg }}
+                >
+                  <stat.icon size={18} />
                 </div>
                 <div>
-                  <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
-                  <div className="text-white/35 text-xs">{stat.label}</div>
+                  <div className="font-display text-2xl font-bold leading-none" style={{ color: stat.fg }}>
+                    {stat.value}
+                  </div>
+                  <div className="text-[11.5px] mt-1.5" style={{ color: "var(--ash)" }}>{stat.label}</div>
                 </div>
               </div>
             ))}

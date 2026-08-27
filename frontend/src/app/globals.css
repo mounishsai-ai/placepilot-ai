@@ -116,6 +116,50 @@ h1 em, h2 em, h3 em, .hl {
     box-shadow: 0 4px 18px rgba(11,23,20,.07);
   }
 
+  /* ── Glossy stat tile ────────────────────────────────────────────────
+     The look the role-picker cards on the sign-in screen get by accident,
+     built deliberately: a pale tinted body, a specular sweep off the
+     top-left corner, and a lit top edge. The edge is the part that reads
+     as glass rather than paint — without it this is just a gradient.
+
+     Light only. The ink→jade gradient stays rationed to metric cards and
+     pipeline tiles, so dark keeps meaning "status" and not "decoration". */
+  .stat-gloss {
+    @apply relative overflow-hidden rounded-xl transition-all duration-200;
+    background: linear-gradient(168deg, #FFFFFF 0%, var(--wash-2) 58%, var(--wash) 100%);
+    border: 1px solid var(--line);
+    box-shadow: 0 1px 2px rgba(11,23,20,.04), 0 8px 20px -12px rgba(11,23,20,.18);
+  }
+  .stat-gloss::before {
+    content: '';
+    @apply absolute inset-0 pointer-events-none;
+    background: radial-gradient(130% 86% at 6% -14%, rgba(255,255,255,.98) 0%, rgba(255,255,255,0) 58%);
+  }
+  .stat-gloss::after {
+    content: '';
+    @apply absolute top-0 left-0 right-0 pointer-events-none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.95) 20%, rgba(255,255,255,.95) 80%, transparent 100%);
+  }
+  /* Content has to clear the sheen pseudo-element. */
+  .stat-gloss > * { @apply relative; z-index: 1; }
+  .stat-gloss:hover {
+    border-color: #CFE6DC;
+    box-shadow: 0 1px 2px rgba(11,23,20,.05), 0 14px 28px -14px rgba(11,23,20,.24);
+  }
+
+  /* Same gloss, gold body — carrying the one meaning gold ever carries:
+     the agent has stopped and a person has to decide. */
+  .stat-gloss-gold {
+    background: linear-gradient(168deg, #FFFDF8 0%, var(--gold-lt) 60%, #FBEDD4 100%);
+    border-color: var(--gold-ln);
+    box-shadow: 0 1px 2px rgba(138,90,18,.06), 0 8px 20px -12px rgba(138,90,18,.30);
+  }
+  .stat-gloss-gold:hover {
+    border-color: #E7CE9C;
+    box-shadow: 0 1px 2px rgba(138,90,18,.07), 0 14px 28px -14px rgba(138,90,18,.36);
+  }
+
   /* ── Buttons ───────────────────────────────────────────────────────── */
   .btn-primary {
     @apply px-6 py-3 rounded-xl font-semibold text-white transition-all duration-200 relative overflow-hidden;
