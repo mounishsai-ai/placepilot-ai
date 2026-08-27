@@ -8,6 +8,7 @@ import {
 } from "recharts";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
+import AgentOrb from "@/components/ui/AgentOrb";
 import { analyticsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 
@@ -130,104 +131,130 @@ export default function AnalyticsPage() {
         <TopBar title="Placement Analytics" subtitle="Skill gaps, readiness, and placement trends" />
 
         <main className="flex-1 p-8 space-y-8">
+          {/* Rebuilt from the version Codex's lower-end model produced — that one
+              hardcoded a dark-navy/neon-emerald glass card (#07120e, /85, /55
+              text opacities) that the light-theme migration shim has no entries
+              for at all, so it would have rendered as a literal dark box sitting
+              in the middle of this otherwise all-white page. Restyled onto the
+              same tokens and utility classes (.glass-card, .input-glass,
+              .btn-primary) every other card on this page already uses. */}
           <motion.section
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative overflow-hidden rounded-2xl border border-emerald-300/15 bg-gradient-to-br from-emerald-500/[0.13] via-[#10251e] to-[#111927] p-6 shadow-[0_18px_60px_rgba(3,30,20,.24)]"
+            className="glass-card"
           >
-            <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-emerald-300/10 blur-3xl" />
-            <div className="relative flex flex-col gap-5">
-              <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div className="flex items-start gap-3">
+                <AgentOrb size={28} still />
                 <div>
-                  <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                    <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_14px_rgba(110,231,183,.95)]" />
-                    Live placement intelligence
-                  </div>
-                  <h2 className="text-xl font-semibold text-white">Ask the Analyst</h2>
-                  <p className="mt-1 text-sm text-white/55">Ask a question in plain English. The agent queries live placement data and shows its evidence.</p>
-                </div>
-                <div className="hidden rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-medium text-white/55 sm:block">
-                  TPO-only access
+                  <h2 className="text-white font-semibold mb-1">Ask the Analyst</h2>
+                  <p className="text-white/40 text-xs max-w-[48ch]">
+                    Ask a question in plain English — it writes and runs a real read-only
+                    query against placement data, then answers from what it actually reads.
+                  </p>
                 </div>
               </div>
-
-              <form onSubmit={askAnalyst} className="flex flex-col gap-3 sm:flex-row">
-                <input
-                  value={analystQuestion}
-                  onChange={(event) => setAnalystQuestion(event.target.value)}
-                  placeholder="e.g. Which drive has the most shortlisted candidates?"
-                  maxLength={500}
-                  className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#07120e]/70 px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 transition focus:border-emerald-300/60 focus:ring-2 focus:ring-emerald-300/15"
-                />
-                <button
-                  type="submit"
-                  disabled={analystLoading || !analystQuestion.trim()}
-                  className="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  {analystLoading ? "Analysing…" : "Ask Analyst"}
-                </button>
-              </form>
-
-              <div className="flex flex-wrap gap-2 text-xs text-white/45">
-                <span className="py-1">Try:</span>
-                {[
-                  "How many CSE students have a CGPA above 8?",
-                  "Which drive has the most shortlisted candidates?",
-                ].map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => setAnalystQuestion(example)}
-                    className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-left transition hover:border-emerald-300/30 hover:bg-emerald-300/10 hover:text-emerald-100"
-                  >
-                    {example}
-                  </button>
-                ))}
-              </div>
-
-              {analystError && (
-                <p className="rounded-xl border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">{analystError}</p>
-              )}
-
-              {analystResult && (
-                <div className="rounded-xl border border-white/10 bg-[#07120e]/55 p-4">
-                  <p className="text-sm leading-6 text-white/85">{analystResult.answer}</p>
-                  <p className="mt-2 text-xs text-white/40">{analystResult.row_count} row{analystResult.row_count === 1 ? "" : "s"} read</p>
-
-                  {analystResult.sql && (
-                    <details className="mt-4 rounded-lg border border-white/[0.08] bg-black/15 px-3 py-2 text-xs">
-                      <summary className="cursor-pointer font-medium text-emerald-200">Show the query used</summary>
-                      <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words text-emerald-100/75">{analystResult.sql}</pre>
-                    </details>
-                  )}
-
-                  {sampleColumns.length > 0 && (
-                    <div className="mt-4 overflow-x-auto rounded-lg border border-white/[0.08]">
-                      <table className="w-full min-w-max text-left text-xs">
-                        <thead className="bg-white/[0.05] text-white/45">
-                          <tr>
-                            {sampleColumns.map((column) => <th key={column} className="px-3 py-2 font-medium">{column}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/[0.06] text-white/75">
-                          {analystResult.sample_rows.map((row, index) => (
-                            <tr key={index}>
-                              {sampleColumns.map((column) => (
-                                <td key={column} className="max-w-[260px] px-3 py-2 align-top">
-                                  {typeof row[column] === "object" && row[column] !== null
-                                    ? JSON.stringify(row[column])
-                                    : String(row[column] ?? "—")}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
+              <span
+                className="hidden sm:inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full shrink-0"
+                style={{ color: "var(--jade-d)", background: "var(--wash)", border: "1px solid #CBEDDD" }}
+              >
+                TPO only
+              </span>
             </div>
+
+            <form onSubmit={askAnalyst} className="flex flex-col gap-3 sm:flex-row">
+              <input
+                value={analystQuestion}
+                onChange={(event) => setAnalystQuestion(event.target.value)}
+                placeholder="e.g. Which drive has the most shortlisted candidates?"
+                maxLength={500}
+                className="input-glass flex-1 !text-[13px]"
+              />
+              <button
+                type="submit"
+                disabled={analystLoading || !analystQuestion.trim()}
+                className="btn-primary !py-0 !px-5 text-[13px] disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ minHeight: "48px" }}
+              >
+                {analystLoading ? "Analysing…" : "Ask"}
+              </button>
+            </form>
+
+            <div className="flex flex-wrap items-center gap-2 mt-3 text-[11.5px]" style={{ color: "var(--faint)" }}>
+              <span>Try:</span>
+              {[
+                "How many CSE students have a CGPA above 8?",
+                "Which drive has the most shortlisted candidates?",
+              ].map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => setAnalystQuestion(example)}
+                  className="px-3 py-1 rounded-full text-left transition-colors"
+                  style={{ background: "var(--wash-2)", border: "1px solid var(--line-2)", color: "var(--ash)" }}
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+
+            {analystError && (
+              <p
+                className="mt-4 rounded-xl px-4 py-3 text-[13px]"
+                style={{ color: "#98332E", background: "var(--rose-lt)", border: "1px solid #F3D3D1" }}
+              >
+                {analystError}
+              </p>
+            )}
+
+            {analystResult && (
+              <div className="mt-4 rounded-xl p-4" style={{ background: "var(--wash-2)", border: "1px solid var(--line-2)" }}>
+                <p className="text-[13.5px] leading-relaxed" style={{ color: "var(--fg)" }}>
+                  {analystResult.answer}
+                </p>
+                <p className="mt-2 text-[11px]" style={{ color: "var(--faint)" }}>
+                  {analystResult.row_count} row{analystResult.row_count === 1 ? "" : "s"} read
+                </p>
+
+                {analystResult.sql && (
+                  <details className="mt-3 rounded-lg px-3 py-2 text-[11.5px]" style={{ border: "1px solid var(--line-2)", background: "var(--wash)" }}>
+                    <summary className="cursor-pointer font-medium" style={{ color: "var(--jade-d)" }}>
+                      Show the query used
+                    </summary>
+                    <pre className="ct-mono mt-2 overflow-x-auto whitespace-pre-wrap break-words text-[11px]" style={{ color: "var(--ash)" }}>
+                      {analystResult.sql}
+                    </pre>
+                  </details>
+                )}
+
+                {sampleColumns.length > 0 && (
+                  <div className="mt-3 overflow-x-auto rounded-lg" style={{ border: "1px solid var(--line-2)" }}>
+                    <table className="w-full min-w-max text-left text-[11.5px]">
+                      <thead style={{ background: "var(--wash)", color: "var(--faint)" }}>
+                        <tr>
+                          {sampleColumns.map((column) => (
+                            <th key={column} className="px-3 py-2 font-medium">{column}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analystResult.sample_rows.map((row, index) => (
+                          <tr key={index} style={{ borderTop: "1px solid var(--line-2)" }}>
+                            {sampleColumns.map((column) => (
+                              <td key={column} className="max-w-[260px] px-3 py-2 align-top" style={{ color: "var(--ash)" }}>
+                                {typeof row[column] === "object" && row[column] !== null
+                                  ? JSON.stringify(row[column])
+                                  : String(row[column] ?? "—")}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </motion.section>
 
           {/* ── Row 1: Skill Gap + Readiness Donut ──────────────────── */}
