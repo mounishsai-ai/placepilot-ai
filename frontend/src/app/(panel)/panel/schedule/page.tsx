@@ -6,6 +6,8 @@ import {
   User, BookOpen, Cpu, Calendar, LogOut,
 } from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
+import AgentOrb from "@/components/ui/AgentOrb";
+import { PrepTab, DebriefTab } from "@/components/panel/PanelAgentTabs";
 import { scheduleAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import toast from "react-hot-toast";
@@ -26,8 +28,14 @@ function PanelSidebar() {
     <aside className="sidebar flex flex-col py-6">
       <div className="px-6 mb-8">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
-            <Cpu size={16} className="text-white" />
+          <div
+            className="w-8 h-8 rounded-[9px] flex items-center justify-center text-white font-display font-extrabold text-[15px]"
+            style={{
+              background: "linear-gradient(140deg,var(--jade),#0C8F58)",
+              boxShadow: "0 2px 8px rgba(15,169,104,.3)",
+            }}
+          >
+            P
           </div>
           <div>
             <div className="text-white font-bold text-sm leading-none">PlacementAI</div>
@@ -41,9 +49,9 @@ function PanelSidebar() {
           return (
             <Link key={href} href={href}>
               <motion.div whileHover={{ x: 2 }} className={clsx("sidebar-item", active && "active")}>
-                <Icon size={18} className={active ? "text-purple-400" : ""} />
+                <Icon size={18} style={active ? { color: "var(--jade-d)" } : undefined} />
                 <span className="text-sm">{label}</span>
-                {active && <motion.div layoutId="panel-active" className="ml-auto w-1.5 h-1.5 rounded-full bg-purple-400" />}
+                {active && <motion.div layoutId="panel-active" className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: "var(--jade)" }} />}
               </motion.div>
             </Link>
           );
@@ -51,7 +59,10 @@ function PanelSidebar() {
       </nav>
       <div className="px-2 mt-4 pt-4 border-t border-white/[0.06]">
         <div className="sidebar-item mb-1">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+            style={{ background: "linear-gradient(140deg,var(--jade),#0C8F58)" }}
+          >
             {user?.email?.[0]?.toUpperCase() ?? "P"}
           </div>
           <div className="min-w-0">
@@ -59,7 +70,7 @@ function PanelSidebar() {
             <div className="text-white/30 text-[10px]">Panel Member</div>
           </div>
         </div>
-        <button onClick={logout} className="sidebar-item w-full text-rose-400 hover:text-rose-300 hover:bg-rose-500/[0.08]">
+        <button onClick={logout} className="sidebar-item w-full" style={{ color: "var(--rose)" }}>
           <LogOut size={16} />
           <span className="text-sm">Sign out</span>
         </button>
@@ -105,6 +116,7 @@ export default function PanelSchedulePage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
+  const [tab, setTab] = useState<"schedule" | "prep" | "debrief">("schedule");
 
   useEffect(() => {
     scheduleAPI.getMySlots()
@@ -153,18 +165,59 @@ export default function PanelSchedulePage() {
           {/* Stats */}
           <div className="grid grid-cols-4 gap-4">
             {[
-              { label: "Assigned",   value: stats.total,     color: "text-white" },
-              { label: "Completed",  value: stats.completed, color: "text-emerald-400" },
-              { label: "Selected",   value: stats.selected,  color: "text-blue-400" },
-              { label: "Remaining",  value: stats.pending,   color: "text-amber-400" },
+              { label: "Assigned",  value: stats.total,     fg: "var(--fg)"     },
+              { label: "Completed", value: stats.completed, fg: "var(--jade-d)" },
+              { label: "Selected",  value: stats.selected,  fg: "var(--jade)"   },
+              { label: "Remaining", value: stats.pending,   fg: "var(--fg)"     },
             ].map((s) => (
-              <div key={s.label} className="glass-card text-center py-4">
-                <div className={`text-3xl font-bold ${s.color}`}>{s.value}</div>
-                <div className="text-white/40 text-xs mt-1">{s.label}</div>
+              <div key={s.label} className="stat-gloss text-center py-4 px-5">
+                <div className="font-display text-3xl font-bold leading-none" style={{ color: s.fg }}>{s.value}</div>
+                <div className="text-[11.5px] mt-1.5" style={{ color: "var(--ash)" }}>{s.label}</div>
               </div>
             ))}
           </div>
 
+
+          {/* Tabs — the interviewer's day in order: what's next, who's next,
+              and what you thought once it's over. */}
+          <div className="flex items-center gap-1" style={{ borderBottom: "1px solid var(--line)" }}>
+            {([
+              { key: "schedule", label: "My Schedule", agent: false },
+              { key: "prep",     label: "Candidate Prep", agent: true },
+              { key: "debrief",  label: "Debrief", agent: true },
+            ] as const).map((t) => {
+              const on = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold transition-colors"
+                  style={{
+                    color: on ? "var(--jade-d)" : "var(--ash)",
+                    borderBottom: `2px solid ${on ? "var(--jade)" : "transparent"}`,
+                    marginBottom: "-1px",
+                  }}
+                >
+                  {t.agent && <AgentOrb size={15} still={!on} />}
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {tab === "prep" && <PrepTab slots={slots} />}
+          {tab === "debrief" && (
+            <DebriefTab
+              slots={slots}
+              onFiled={(slotId, result) =>
+                setSlots((prev) =>
+                  prev.map((s) => (s.id === slotId ? { ...s, result, status: "completed" } : s))
+                )
+              }
+            />
+          )}
+
+          {tab === "schedule" && (<>
           {/* Date header */}
           <div className="flex items-center gap-3">
             <Calendar size={16} className="text-white/30" />
@@ -325,6 +378,7 @@ export default function PanelSchedulePage() {
               </p>
             </motion.div>
           )}
+          </>)}
         </main>
       </div>
     </div>

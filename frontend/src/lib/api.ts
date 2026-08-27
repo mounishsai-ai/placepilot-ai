@@ -54,6 +54,9 @@ export const drivesAPI = {
   getEvents: (id: string) => api.get(`/api/drives/${id}/events`),
   archive: (id: string) => api.patch(`/api/drives/${id}/archive`),
   restore: (id: string) => api.patch(`/api/drives/${id}/restore`),
+  /** Drives belonging to the signed-in HR user's own company, with pipeline
+      progress and the agent's latest step on each. */
+  myCompany: () => api.get("/api/drives/mine/company"),
 };
 
 // ─── Agent (orchestrator) ─────────────────────────────────────────────────
@@ -108,6 +111,13 @@ export const scheduleAPI = {
   listSlots: (driveId?: string) =>
     api.get("/api/schedule/slots", { params: driveId ? { drive_id: driveId } : {} }),
   getMySlots: () => api.get("/api/schedule/slots/mine"),
+  /** What the panel should know before meeting this candidate. Generated on
+      demand — most scheduled slots are never opened. */
+  prepBrief: (slotId: string) => api.post(`/api/schedule/slots/${slotId}/prep`),
+  /** Rough post-interview notes → a structured scorecard. Does not file the
+      result; that stays an explicit act via updateResult. */
+  debrief: (slotId: string, notes: string) =>
+    api.post(`/api/schedule/slots/${slotId}/debrief`, { notes }),
 };
 
 // ─── Notifications ────────────────────────────────────────────────────────

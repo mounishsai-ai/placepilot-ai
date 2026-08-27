@@ -13,11 +13,12 @@ from app.database import get_db
 from app.models import (
     InterviewRound, InterviewSlot, Room, PanelMember,
     PanelAvailability, PlacementDrive, RoundType, UserRole, AgentEvent,
-    DriveStatus, MatchScore, User, SlotStatus,
+    DriveStatus, MatchScore, User, SlotStatus, Student,
 )
 from app.api.auth import get_current_user, require_role
 from app.api.websocket import emit_agent_event
 from app.agents.scheduler_agent import allocate_slots, detect_all_conflicts
+from app.agents.panel_agent import generate_prep_brief, structure_debrief
 
 router = APIRouter()
 
@@ -351,6 +352,116 @@ async def update_slot_result(
     slot.status = "completed"
     await db.commit()
     return {"message": "Result updated"}
+
+
+# ─── Panel agent ─────────────────────────────────────────────────────────────
+
+async def _own_slot_or_403(slot_id: str, current_user: User, db: AsyncSession) -> InterviewSlot:
+    """Load a slot, refusing it unless this panel member is the one assigned.
+
+    A briefing contains a named candidate's profile and a debrief writes a
+    hiring verdict, so neither may be reachable by slot id alone. TPOs are let
+    through — they own the schedule.
+    """
+    result = await db.execute(
+        select(InterviewSlot)
+        .options(
+            selectinload(InterviewSlot.student).selectinload(Student.skills),
+            selectinload(InterviewSlot.round).selectinload(InterviewRound.drive),
+        )
+        .where(InterviewSlot.id == slot_id)
+    )
+    slot = result.scalar_one_or_none()
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    if current_user.role == UserRole.PANEL:
+        panel_result = await db.execute(
+            select(PanelMember).where(PanelMember.user_id == current_user.id)
+        )
+        panel = panel_result.scalar_one_or_none()
+        if not panel or slot.panel_id != panel.id:
+            raise HTTPException(
+                status_code=403, detail="That interview is not on your schedule"
+            )
+    return slot
+
+
+@router.post("/slots/{slot_id}/prep")
+async def prep_brief(
+    slot_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.PANEL, UserRole.TPO)),
+):
+    """What the panel should know about the candidate they are about to meet.
+
+    Generated on demand rather than precomputed for every slot: most scheduled
+    interviews are never actually opened, and a brief written now reflects the
+    profile as it stands now.
+    """
+    slot = await _own_slot_or_403(slot_id, current_user, db)
+    s = slot.student
+    if not s:
+        raise HTTPException(status_code=404, detail="No candidate on that slot")
+
+    drive = slot.round.drive if slot.round else None
+    jd = drive.jd_parsed if drive else None
+
+    profile = {
+        "name": s.name,
+        "branch": s.branch,
+        "cgpa": s.cgpa,
+        "batch": s.batch,
+        "active_backlogs": s.backlogs_active,
+        "readiness_score": s.placement_readiness_score,
+        "summary": s.skills_summary,
+        "skills": [
+            {"skill": k.skill, "proficiency": k.proficiency, "years": k.years_experience}
+            for k in (s.skills or [])
+        ],
+    }
+    brief = await generate_prep_brief(
+        profile, jd, (jd or {}).get("role") or (drive.title if drive else "this role")
+    )
+    return {
+        "slot_id": slot.id,
+        "candidate": {"name": s.name, "roll_no": s.roll_no, "branch": s.branch, "cgpa": s.cgpa},
+        "role": (jd or {}).get("role") or (drive.title if drive else None),
+        "brief": brief,
+    }
+
+
+class DebriefRequest(BaseModel):
+    notes: str
+
+
+@router.post("/slots/{slot_id}/debrief")
+async def debrief(
+    slot_id: str,
+    body: DebriefRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.PANEL, UserRole.TPO)),
+):
+    """Rough post-interview notes → a structured scorecard.
+
+    Deliberately does NOT write the result. The panel member reads the
+    scorecard, and filing it stays a separate, explicit act through
+    PATCH /slots/{id}/result — an agent should not record a hiring decision
+    because someone typed a paragraph.
+    """
+    notes = (body.notes or "").strip()
+    if len(notes) < 15:
+        raise HTTPException(
+            status_code=400, detail="Write a little more before the agent can structure it"
+        )
+
+    slot = await _own_slot_or_403(slot_id, current_user, db)
+    drive = slot.round.drive if slot.round else None
+    jd = drive.jd_parsed if drive else None
+    card = await structure_debrief(
+        notes, (jd or {}).get("role") or (drive.title if drive else "this role")
+    )
+    return {"slot_id": slot.id, "scorecard": card}
 
 
 @router.get("/conflicts/{round_id}")
