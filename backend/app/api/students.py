@@ -569,9 +569,13 @@ async def get_student_matches(
     current_user: User = Depends(get_current_user),
 ):
     await _assert_student_access(student_id, current_user, db)
+    # The drive's company is loaded eagerly alongside the drive itself: this
+    # used to return m.drive.company_id, so the student's dashboard printed a
+    # raw UUID under "Company". Chaining the load also keeps it off the lazy
+    # path, which raises MissingGreenlet under asyncpg.
     result = await db.execute(
         select(MatchScore)
-        .options(selectinload(MatchScore.drive))
+        .options(selectinload(MatchScore.drive).selectinload(PlacementDrive.company))
         .where(MatchScore.student_id == student_id)
         .order_by(MatchScore.score.desc())
     )
@@ -579,7 +583,8 @@ async def get_student_matches(
     return [
         {
             "drive_id": m.drive_id,
-            "company": m.drive.company_id if m.drive else None,
+            "company": m.drive.company.name if m.drive and m.drive.company else None,
+            "drive_title": m.drive.title if m.drive else None,
             "role": m.drive.jd_parsed.get("role") if m.drive and m.drive.jd_parsed else None,
             "score": m.score,
             "rank": m.rank,

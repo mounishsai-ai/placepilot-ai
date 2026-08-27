@@ -3,6 +3,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Bell, Calendar, Zap, BookOpen, Upload, FileText, ExternalLink, Edit2, X } from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
+import JDModal from "@/components/ui/JDModal";
+import PortalHeaderActions from "@/components/layout/PortalHeaderActions";
 import { studentsAPI, notificationsAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import { useStudentWebSocket } from "@/lib/websocket";
@@ -50,6 +52,8 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [skillAdvice, setSkillAdvice] = useState<string | null>(null);
+  /** Drive whose parsed JD the student is reading, or null when the modal is closed. */
+  const [jdDriveId, setJdDriveId] = useState<string | null>(null);
   const [skillAdviceRole, setSkillAdviceRole] = useState<string | null>(null);
   const [skillAdviceLoading, setSkillAdviceLoading] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -168,7 +172,11 @@ export default function StudentDashboard() {
       <TopBar
         title={`Welcome back, ${(profile as Record<string,unknown>)?.name ?? "Student"} 👋`}
         subtitle="Your placement journey at a glance"
-      />
+      >
+        <PortalHeaderActions role="Student" />
+      </TopBar>
+
+      {jdDriveId && <JDModal driveId={jdDriveId} onClose={() => setJdDriveId(null)} />}
 
       <main className="p-8 max-w-7xl mx-auto space-y-8">
         {/* ── Hero Row ────────────────────────────────────────────────── */}
@@ -394,6 +402,20 @@ export default function StudentDashboard() {
                         : <span className="badge-gray badge text-[10px]">Rank #{m.rank as number}</span>
                       }
                     </div>
+                    {/* The JD as the agent parsed it — i.e. the criteria this
+                        student was actually judged against. Disabled rather
+                        than hidden when the drive id is missing, so the row
+                        doesn't change width between matches. */}
+                    <button
+                      onClick={() => setJdDriveId((m.drive_id as string) ?? null)}
+                      disabled={!m.drive_id}
+                      title="View the job description"
+                      aria-label="View the job description"
+                      className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all disabled:opacity-30"
+                      style={{ background: "var(--jade)", color: "#FFFFFF" }}
+                    >
+                      <FileText size={15} />
+                    </button>
                   </motion.div>
                 ))}
               </div>
