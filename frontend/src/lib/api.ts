@@ -62,6 +62,9 @@ export const drivesAPI = {
 export const agentAPI = {
   start: (driveId: string) => api.post(`/api/drives/${driveId}/run-agent`),
   listRuns: (driveId: string) => api.get(`/api/drives/${driveId}/agent-runs`),
+  /** Runs in flight or waiting on a human, across every drive — powers the dock.
+      Returns no trace: paused-first ordering is decided server-side. */
+  live: () => api.get("/api/drives/agent-runs/live"),
   getRun: (runId: string) => api.get(`/api/drives/agent-runs/${runId}`),
   answer: (runId: string, answer: string) =>
     api.post(`/api/drives/agent-runs/${runId}/answer`, { answer }),

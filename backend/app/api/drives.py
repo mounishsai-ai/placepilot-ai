@@ -343,6 +343,63 @@ async def answer_agent_run(
     return {"message": "Answer received, resuming", "run_id": run_id}
 
 
+@router.get("/agent-runs/live")
+async def live_agent_runs(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_user),
+):
+    """Every run currently in flight or waiting on a human, across all drives.
+
+    Declared above /agent-runs/{run_id} on purpose — FastAPI matches in order,
+    and the parameterised route would otherwise swallow "live" as a run id.
+
+    Deliberately does NOT serialise the trace: the dock polls this from every
+    page, and get_agent_run already returns full detail for one run when
+    somebody actually opens it. Only the newest trace row is included, which is
+    all the collapsed dock renders.
+    """
+    # PlacementDrive.company is a relationship, not a column — touching it
+    # lazily raises MissingGreenlet under asyncpg, so the company name is
+    # selected explicitly rather than walked to through the ORM.
+    result = await db.execute(
+        select(AgentRun, PlacementDrive.title, Company.name)
+        .join(PlacementDrive, PlacementDrive.id == AgentRun.drive_id)
+        .join(Company, Company.id == PlacementDrive.company_id)
+        .where(AgentRun.status.in_([AgentRunStatus.RUNNING, AgentRunStatus.PAUSED]))
+        .order_by(AgentRun.created_at.desc())
+    )
+    rows = result.all()
+
+    out = []
+    for run, drive_title, company_name in rows:
+        latest = await db.execute(
+            select(AgentTrace)
+            .where(AgentTrace.run_id == run.id)
+            .order_by(AgentTrace.seq.desc())
+            .limit(1)
+        )
+        last = latest.scalar_one_or_none()
+        out.append({
+            "id": run.id,
+            "drive_id": run.drive_id,
+            "drive_title": drive_title,
+            "company": company_name,
+            "status": run.status.value,
+            "pending_question": run.pending_question,
+            "last_step": (
+                {"seq": last.seq, "kind": last.kind, "summary": last.summary[:180]}
+                if last else None
+            ),
+            "updated_at": run.updated_at.isoformat(),
+        })
+
+    # Paused first, then oldest — so the dock's single slot always shows the
+    # run that has been blocked on a person the longest, not whichever the DB
+    # happened to return first.
+    out.sort(key=lambda r: (r["status"] != "paused", r["updated_at"]))
+    return out
+
+
 @router.get("/agent-runs/{run_id}")
 async def get_agent_run(
     run_id: str,
