@@ -440,3 +440,10 @@ h1 em, h2 em, h3 em, .hl {
   .bg-amber-400 { background-color: var(--gold) !important; }
   .bg-rose-400, .bg-rose-500 { background-color: var(--rose) !important; }
 }
+
+/* ── Agent dock clearance ─────────────────────────────────────────────────
+   AgentDock is fixed to the viewport bottom and toggles this class on <body>
+   while it is on screen. Without the reserved space the last row of any
+   scrollable page (drives, students) sits underneath the strip. The class is
+   removed when the agent goes idle, so pages that never see it pay nothing. */
+body.has-agent-dock main { padding-bottom: 92px; }

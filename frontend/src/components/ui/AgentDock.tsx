@@ -72,6 +72,17 @@ export default function AgentDock() {
   const run = runs[0];
   const paused = run?.status === "paused";
 
+  /* The strip is fixed to the viewport bottom, so on a scrollable page it
+     covers the last row. Pages can't reserve the space themselves — they
+     don't know whether the agent is running — so the dock reserves it, and
+     gives it back the moment it leaves. Must sit above the early return
+     below: hooks can't be conditional. */
+  useEffect(() => {
+    const on = Boolean(run);
+    document.body.classList.toggle("has-agent-dock", on);
+    return () => document.body.classList.remove("has-agent-dock");
+  }, [run]);
+
   // Nothing in flight and nothing blocked — the dock stays out of the way
   // entirely rather than sitting there saying "idle".
   if (!run) return null;
