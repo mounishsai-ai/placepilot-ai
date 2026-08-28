@@ -125,7 +125,7 @@ async def get_my_profile(
         "backlogs_historical": student.backlogs_historical,
         "attendance_pct": student.attendance_pct,
         "resume_url": student.resume_url,
-        "resume_uploaded_at": student.resume_uploaded_at.isoformat() if student.resume_uploaded_at else None,
+        "resume_uploaded_at": student.resume_uploaded_at.isoformat() + "Z" if student.resume_uploaded_at else None,
         "linkedin_url": student.linkedin_url,
         "github_url": student.github_url,
         "placement_readiness_score": student.placement_readiness_score,
@@ -249,7 +249,7 @@ async def upload_my_resume(
     await db.commit()
     return {
         "resume_url": student.resume_url,
-        "resume_uploaded_at": student.resume_uploaded_at.isoformat(),
+        "resume_uploaded_at": student.resume_uploaded_at.isoformat() + "Z",
         "filename": filename,
         "size_mb": round(size_mb, 2),
         "extracted": parsed
@@ -376,7 +376,7 @@ async def get_student(
         "backlogs_historical": student.backlogs_historical,
         "attendance_pct": student.attendance_pct,
         "resume_url": student.resume_url,
-        "resume_uploaded_at": student.resume_uploaded_at.isoformat() if student.resume_uploaded_at else None,
+        "resume_uploaded_at": student.resume_uploaded_at.isoformat() + "Z" if student.resume_uploaded_at else None,
         "linkedin_url": student.linkedin_url, "github_url": student.github_url,
         "placement_readiness_score": student.placement_readiness_score,
         "skills_summary": student.skills_summary,
@@ -497,7 +497,7 @@ async def upload_resume(
     student.resume_url = f"/api/students/{student_id}/resume"
     student.resume_uploaded_at = datetime.utcnow()
     await db.commit()
-    return {"resume_url": student.resume_url, "resume_uploaded_at": student.resume_uploaded_at.isoformat()}
+    return {"resume_url": student.resume_url, "resume_uploaded_at": student.resume_uploaded_at.isoformat() + "Z"}
 
 
 @router.get("/{student_id}/resume")
@@ -550,8 +550,8 @@ async def get_student_schedule(
         {
             "id": s.id,
             "round_type": s.round.round_type.value if s.round else None,
-            "slot_start": s.slot_start.isoformat(),
-            "slot_end": s.slot_end.isoformat(),
+            "slot_start": s.slot_start.isoformat() + "Z",
+            "slot_end": s.slot_end.isoformat() + "Z",
             "status": s.status.value,
             "result": s.result,
             "venue": s.room.name if s.room else s.round.venue if s.round else None,

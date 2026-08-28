@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
+from sqlalchemy.orm import selectinload
+
 from app.database import get_db
 from app.models import Notification, Student, NotificationChannel, UserRole
 from app.api.auth import get_current_user, require_role
@@ -45,12 +47,19 @@ async def send_notifications(
             lambda s: body.data,
             body.channels,
         )
-        # Persist to DB
+        # Persist to DB. body.data is the free-form payload the compose form
+        # sends ({"subject": ..., "body": ...} today) — store it as real
+        # subject/message columns, not str(dict), or the notification list
+        # renders the Python repr verbatim (observed live 2026-08-28).
+        subject = str(body.data.get("subject") or body.template_id or "Notification")
+        message = str(body.data.get("body") or body.data.get("message") or "")
         for r in results:
             notif = Notification(
                 student_id=r["student_id"],
                 channel=NotificationChannel.EMAIL,
-                message=str(body.data),
+                subject=subject,
+                message=message,
+                template_id=body.template_id,
                 status=r["status"],
             )
             db.add(notif)
@@ -81,9 +90,9 @@ async def get_student_notifications(
             "subject": n.subject,
             "message": n.message,
             "status": n.status,
-            "sent_at": n.sent_at.isoformat() if n.sent_at else None,
-            "read_at": n.read_at.isoformat() if n.read_at else None,
-            "created_at": n.created_at.isoformat(),
+            "sent_at": n.sent_at.isoformat() + "Z" if n.sent_at else None,
+            "read_at": n.read_at.isoformat() + "Z" if n.read_at else None,
+            "created_at": n.created_at.isoformat() + "Z",
         }
         for n in notifs
     ]
@@ -103,6 +112,61 @@ async def mark_read(
     )
     await db.commit()
     return {"message": "Marked as read"}
+
+
+@router.get("")
+async def list_all_notifications(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Every notification, newest first — the TPO-facing history. Distinct
+    from /offline-queue, which is only the retry backlog.
+
+    A single "send" fans out into one Notification row per recipient so each
+    student's own view still has their own row (student-facing notifications
+    stay untouched). But there is currently only one send target, "all
+    students", so every send looks like ~200 identical rows here — grouped
+    below into one entry per real send (same subject/message/status landing
+    within a few seconds of each other), with a recipient_count so the list
+    reads "Sent to 201 students" instead of the same line 201 times.
+    """
+    result = await db.execute(
+        select(Notification)
+        .options(selectinload(Notification.student))
+        .order_by(Notification.created_at.desc())
+        .limit(600)
+    )
+    notifs = result.scalars().all()
+
+    groups: list[dict] = []
+    by_key: dict[tuple, dict] = {}
+    for n in notifs:
+        # Same background task writes every row within the same second or two.
+        bucket = int(n.created_at.timestamp() // 5)
+        key = (n.subject, n.message, n.status, bucket)
+        g = by_key.get(key)
+        if g is None:
+            g = {
+                "id": n.id,
+                "student_id": n.student_id,
+                "student_name": n.student.name if n.student else None,
+                "channel": n.channel.value,
+                "subject": n.subject,
+                "message": n.message,
+                "status": n.status,
+                "created_at": n.created_at.isoformat() + "Z",
+                "recipient_count": 0,
+            }
+            by_key[key] = g
+            groups.append(g)
+        g["recipient_count"] += 1
+
+    for g in groups:
+        if g["recipient_count"] > 1:
+            g["student_id"] = None
+            g["student_name"] = None
+
+    return groups[:150]
 
 
 @router.get("/offline-queue")
@@ -125,7 +189,7 @@ async def get_offline_queue(
                 "channel": n.channel.value,
                 "message": n.message,
                 "retry_count": n.retry_count,
-                "created_at": n.created_at.isoformat(),
+                "created_at": n.created_at.isoformat() + "Z",
             }
             for n in queued
         ],

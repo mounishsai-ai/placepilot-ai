@@ -98,6 +98,27 @@ Rules:
   and say so in "unclear". An interviewer needs to know when you are guessing."""
 
 
+SESSION_NOTE_SYSTEM = """You clean up an interviewer's rough notes about an interview
+session as a whole (not about any one candidate) into clear, well-organised prose.
+
+Often dictated by voice between interviews, so the input may run on or repeat itself.
+Fix grammar and punctuation, organise distinct points as short bullet-style sentences
+if there are several, keep it factual. Never invent a detail that is not in the notes,
+and never add an opinion or recommendation — this is not about any one candidate.
+
+Respond with JSON only:
+{"polished": "the cleaned-up notes, ready to save"}
+"""
+
+
+async def polish_session_note(raw_notes: str) -> str:
+    """Rough (often dictated) session-wide notes -> clean prose. No scoring, no
+    recommendation -- there is no single candidate for either to attach to."""
+    result = await _generate_json(SESSION_NOTE_SYSTEM, raw_notes)
+    polished = result.get("polished") if result else None
+    return polished.strip() if isinstance(polished, str) and polished.strip() else raw_notes
+
+
 async def structure_debrief(notes: str, role_title: str) -> dict[str, Any]:
     """Rough post-interview notes → a scorecard the panel can check and file."""
     prompt = f"ROLE: {role_title}\n\nINTERVIEWER'S NOTES:\n{notes}"

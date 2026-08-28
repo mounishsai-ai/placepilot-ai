@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Briefcase, Play, CheckCircle, Clock, AlertTriangle,
   ChevronDown, ChevronUp, Users, Star, X, Check,
-  Building2, Calendar, TrendingUp, Zap, Search, Radio,
+  Building2, Calendar, TrendingUp, Zap, Search, Radio, Trash2, Plus,
 } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
@@ -164,6 +164,177 @@ function PipelineTimeline({ status }: { status: string }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─── Create Drive Modal (TPO) ──────────────────────────────────────────────────
+// Mirrors the HR wizard's inputs (company, title, JD) but stops right where
+// HR's "Analyze JD" button would auto-launch the pipeline. A TPO-created
+// drive lands in the list as a plain draft — the existing "Run Pipeline"
+// button on the card is what starts it, on the TPO's own timing.
+
+function CreateDriveModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
+  const [companyId, setCompanyId] = useState("");
+  const [title, setTitle] = useState("");
+  const [jdText, setJdText] = useState("");
+  const [deadline, setDeadline] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    drivesAPI.listCompanies().then((res) => {
+      setCompanies(res.data);
+      if (res.data.length > 0) setCompanyId(res.data[0].id);
+    }).catch(() => {});
+  }, []);
+
+  const create = async () => {
+    if (!title.trim() || !companyId) {
+      toast.error("Pick a company and give the drive a title");
+      return;
+    }
+    if (!jdText.trim()) {
+      toast.error("Paste a job description — Run Pipeline needs it to parse eligibility and rank candidates");
+      return;
+    }
+    setCreating(true);
+    try {
+      await drivesAPI.create({
+        company_id: companyId,
+        title: title.trim(),
+        jd_text: jdText.trim(),
+        deadline: deadline || undefined,
+      });
+      toast.success("Drive created - run the pipeline on it whenever ready");
+      onCreated();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg ?? "Failed to create drive");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="glass-card w-full max-w-lg mx-4"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg">Create a <em>drive</em></h2>
+          <button onClick={onClose} className="transition-colors hover:opacity-70" style={{ color: "var(--faint)" }}>
+            <X size={20} />
+          </button>
+        </div>
+        <p className="text-sm mb-4" style={{ color: "var(--ash)" }}>
+          This only creates the drive - nothing runs until you click Run Pipeline on it.
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs mb-1.5 block" style={{ color: "var(--ash)" }}>Company</label>
+            <select
+              value={companyId}
+              onChange={(e) => setCompanyId(e.target.value)}
+              className="w-full text-sm rounded-xl px-3 py-2.5 outline-none"
+              style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
+            >
+              {companies.length === 0 && <option value="">No companies found</option>}
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs mb-1.5 block" style={{ color: "var(--ash)" }}>Drive title</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Software Development Engineer 2025"
+              className="input-glass !py-2.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs mb-1.5 block" style={{ color: "var(--ash)" }}>Job description</label>
+            <textarea
+              value={jdText}
+              onChange={(e) => setJdText(e.target.value)}
+              rows={5}
+              placeholder="Paste the JD text..."
+              className="input-glass !py-2.5 text-sm resize-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs mb-1.5 block" style={{ color: "var(--ash)" }}>Deadline (optional)</label>
+            <input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              className="input-glass !py-2.5 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 justify-end mt-5">
+          <button onClick={onClose} className="btn-ghost">Cancel</button>
+          <button onClick={create} disabled={creating} className="btn-primary flex items-center gap-2">
+            {creating ? (
+              <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: "rgba(255,255,255,.3)", borderTopColor: "#fff" }} />
+            ) : (
+              <Plus size={16} />
+            )}
+            Create Drive
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Confirm Dialog ────────────────────────────────────────────────────────────────
+// The browser's own confirm() looks like every other site's confirm() — flat
+// system chrome that breaks the moment it appears. This carries the same
+// weight (blocks the action until answered) without the jarring context switch.
+
+function ConfirmDialog({
+  title, message, danger, onConfirm, onCancel,
+}: {
+  title: string;
+  message: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="glass-card w-full max-w-sm mx-4"
+      >
+        <h2 className="text-lg mb-2">{title}</h2>
+        <p className="text-sm mb-5" style={{ color: "var(--ash)" }}>{message}</p>
+        <div className="flex gap-3 justify-end">
+          <button onClick={onCancel} className="btn-ghost">Cancel</button>
+          <button
+            onClick={onConfirm}
+            className="px-5 py-2.5 rounded-xl font-semibold text-white text-sm transition-all"
+            style={{ background: danger ? "var(--rose)" : "var(--jade)" }}
+          >
+            {danger ? "Delete" : "Confirm"}
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }
@@ -585,6 +756,7 @@ function DriveCard({
   onConfirmSchedule,
   onViewSchedule,
   onArchive,
+  onDelete,
   liveEvents,
 }: {
   drive: Drive;
@@ -594,6 +766,7 @@ function DriveCard({
   onConfirmSchedule: (id: string) => void;
   onViewSchedule: (id: string) => void;
   onArchive: (id: string, title: string) => void;
+  onDelete: (id: string, title: string) => void;
   liveEvents: AgentEvent[];
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -763,6 +936,18 @@ function DriveCard({
               <X size={14} />
             </button>
           )}
+          {/* Delete — discards the drive outright. Only before a schedule is
+              confirmed; past that, real interview slots may exist and the
+              server rejects this, so archive is what's offered instead. */}
+          {!["scheduled", "ongoing", "completed", "cancelled"].includes(drive.status) && (
+            <button
+              onClick={() => onDelete(drive.id, drive.title)}
+              className="text-white/20 hover:text-rose-400 transition-colors p-1.5 rounded-lg hover:bg-rose-500/10"
+              title="Delete drive"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
           <button
             onClick={toggleExpand}
             className="text-white/30 hover:text-white/70 transition-colors p-1"
@@ -846,6 +1031,8 @@ export default function DrivesPage() {
   const [shortlistDriveId, setShortlistDriveId] = useState<string | null>(null);
   const [shortlistCandidates, setShortlistCandidates] = useState<ShortlistCandidate[]>([]);
   const [scheduleRoundDriveId, setScheduleRoundDriveId] = useState<string | null>(null);
+  const [showCreateDrive, setShowCreateDrive] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; danger?: boolean; onConfirm: () => void } | null>(null);
   const [pollingActive, setPollingActive] = useState(false);
   useTPOWebSocket();
   const { agentEvents } = useDashboardStore();
@@ -899,16 +1086,41 @@ export default function DrivesPage() {
     }
   };
 
-  const handleArchive = async (id: string, title: string) => {
-    if (!window.confirm(`Archive "${title}"? You can restore it later from the Archives tab.`)) return;
-    try {
-      await drivesAPI.archive(id);
-      toast.success(`"${title}" archived`);
-      fetchDrives();
-    } catch (err: unknown) {
-      const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
-      toast.error(msg ?? "Failed to archive drive");
-    }
+  const handleDelete = (id: string, title: string) => {
+    setConfirmDialog({
+      title: `Delete "${title}"?`,
+      message: "This discards the drive and everything the agent has done on it. Cannot be undone.",
+      danger: true,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await drivesAPI.delete(id);
+          toast.success(`"${title}" deleted`);
+          fetchDrives();
+        } catch (err: unknown) {
+          const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+          toast.error(msg ?? "Failed to delete drive");
+        }
+      },
+    });
+  };
+
+  const handleArchive = (id: string, title: string) => {
+    setConfirmDialog({
+      title: `Archive "${title}"?`,
+      message: "You can restore it later from the Archives tab.",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await drivesAPI.archive(id);
+          toast.success(`"${title}" archived`);
+          fetchDrives();
+        } catch (err: unknown) {
+          const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
+          toast.error(msg ?? "Failed to archive drive");
+        }
+      },
+    });
   };
 
   const activeDrives   = drives.filter((d) => d.status !== "cancelled");
@@ -951,7 +1163,14 @@ export default function DrivesPage() {
             ? "A drive is in flight — refreshing every 4s"
             : "Every drive, and what the agent has done to it"
           }
-        />
+        >
+          <button
+            onClick={() => setShowCreateDrive(true)}
+            className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3"
+          >
+            <Plus size={13} /> Create Drive
+          </button>
+        </TopBar>
 
         <main className="p-7 space-y-5">
           {/* Stats bar — the one that needs a person is the one that stands out */}
@@ -1009,6 +1228,7 @@ export default function DrivesPage() {
                   onConfirmSchedule={handleConfirmSchedule}
                   onViewSchedule={(id) => router.push(`/tpo/schedule?drive=${id}`)}
                   onArchive={handleArchive}
+                  onDelete={handleDelete}
                   liveEvents={agentEvents.filter((e) => e.drive_id === drive.id)}
                 />
               ))}
@@ -1025,6 +1245,28 @@ export default function DrivesPage() {
           onClose={() => setShortlistDriveId(null)}
           onApproved={() => {
             setShortlistDriveId(null);
+            fetchDrives();
+          }}
+        />
+      )}
+
+      {/* Confirm dialog (delete / archive) */}
+      {confirmDialog && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          danger={confirmDialog.danger}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+        />
+      )}
+
+      {/* Create drive modal */}
+      {showCreateDrive && (
+        <CreateDriveModal
+          onClose={() => setShowCreateDrive(false)}
+          onCreated={() => {
+            setShowCreateDrive(false);
             fetchDrives();
           }}
         />

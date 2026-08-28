@@ -11,11 +11,13 @@ import { useStudentWebSocket } from "@/lib/websocket";
 import { formatDistanceToNow, format } from "date-fns";
 import toast from "react-hot-toast";
 
-function ReadinessCircle({ score }: { score: number }) {
+function ReadinessCircle({ score }: { score: number | null }) {
+  const hasScore = score != null;
   const color =
+    !hasScore ? "rgba(255,255,255,0.15)" :
     score >= 80 ? "#10b981" : score >= 60 ? "#4d88ff" : score >= 40 ? "#f59e0b" : "#f43f5e";
   const circumference = 2 * Math.PI * 45;
-  const dashOffset = circumference - (score / 100) * circumference;
+  const dashOffset = hasScore ? circumference - (score / 100) * circumference : circumference;
 
   return (
     <div className="relative flex items-center justify-center w-36 h-36">
@@ -31,11 +33,11 @@ function ReadinessCircle({ score }: { score: number }) {
           initial={{ strokeDashoffset: circumference }}
           animate={{ strokeDashoffset: dashOffset }}
           transition={{ duration: 1.2, ease: "easeOut" }}
-          style={{ filter: `drop-shadow(0 0 8px ${color})` }}
+          style={{ filter: hasScore ? `drop-shadow(0 0 8px ${color})` : undefined }}
         />
       </svg>
       <div className="absolute text-center">
-        <div className="text-2xl font-bold text-white">{score}</div>
+        <div className="text-2xl font-bold text-white">{hasScore ? score : "-"}</div>
         <div className="text-white/40 text-[10px]">/ 100</div>
       </div>
     </div>
@@ -49,6 +51,7 @@ export default function StudentDashboard() {
   const [schedule, setSchedule] = useState<Record<string, unknown>[]>([]);
   const [matches, setMatches] = useState<Record<string, unknown>[]>([]);
   const [notifications, setNotifications] = useState<Record<string, unknown>[]>([]);
+  const [expandedNotifId, setExpandedNotifId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [skillAdvice, setSkillAdvice] = useState<string | null>(null);
@@ -165,7 +168,10 @@ export default function StudentDashboard() {
     if (user) fetchData();
   }, [user, fetchData]);
 
-  const readiness = Number((profile as Record<string,unknown>)?.placement_readiness_score ?? 72);
+  // No fake placeholder score — a student who hasn't uploaded a resume yet
+  // (so nothing has been AI-scored) sees "-", not a fabricated 72.
+  const readinessRaw = (profile as Record<string, unknown>)?.placement_readiness_score;
+  const readiness: number | null = readinessRaw != null ? Number(readinessRaw) : null;
 
   return (
     <div className="min-h-screen bg-cosmic">
@@ -180,7 +186,7 @@ export default function StudentDashboard() {
 
       <main className="p-8 max-w-7xl mx-auto space-y-8">
         {/* ── Hero Row ────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-4 gap-6">
           {/* Readiness score */}
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
@@ -192,15 +198,19 @@ export default function StudentDashboard() {
             </h2>
             <ReadinessCircle score={readiness} />
             <div className="mt-4">
-              <div className={`badge text-sm ${
-                readiness >= 80 ? "badge-green" :
-                readiness >= 60 ? "badge-blue" :
-                readiness >= 40 ? "badge-amber" : "badge-rose"
-              }`}>
-                {readiness >= 80 ? "Highly Ready" :
-                 readiness >= 60 ? "Ready" :
-                 readiness >= 40 ? "Developing" : "Not Ready"}
-              </div>
+              {readiness != null ? (
+                <div className={`badge text-sm ${
+                  readiness >= 80 ? "badge-green" :
+                  readiness >= 60 ? "badge-blue" :
+                  readiness >= 40 ? "badge-amber" : "badge-rose"
+                }`}>
+                  {readiness >= 80 ? "Highly Ready" :
+                   readiness >= 60 ? "Ready" :
+                   readiness >= 40 ? "Developing" : "Not Ready"}
+                </div>
+              ) : (
+                <div className="badge badge-gray text-sm">Upload a resume to get scored</div>
+              )}
               <p className="text-white/30 text-xs mt-2">Based on CGPA, skills & attendance</p>
             </div>
           </motion.div>
@@ -331,6 +341,62 @@ export default function StudentDashboard() {
               )}
             </div>
           </motion.div>
+
+          {/* Notifications — moved up from the bottom of the page so it's
+              part of the first thing a student sees, not the last. */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="glass-card"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Bell size={16} className="text-amber-400" />
+              <h2 className="text-white/50 text-xs font-semibold uppercase tracking-wider">
+                Notifications
+              </h2>
+              <span className="badge-amber badge ml-auto text-[10px]">
+                {notifications.filter((n) => !n.read_at).length} unread
+              </span>
+            </div>
+            {notifications.length === 0 ? (
+              <p className="text-white/30 text-xs text-center py-6">Nothing yet</p>
+            ) : (
+              <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+                {notifications.map((n, i) => {
+                  const id = n.id as string;
+                  const expanded = expandedNotifId === id;
+                  return (
+                    <div
+                      key={id ?? i}
+                      onClick={() => {
+                        setExpandedNotifId(expanded ? null : id);
+                        if (!n.read_at && id) {
+                          notificationsAPI.markRead(id).catch(() => {});
+                          setNotifications((prev) =>
+                            prev.map((x) => (x.id === id ? { ...x, read_at: new Date().toISOString() } : x))
+                          );
+                        }
+                      }}
+                      className={`flex gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                        n.read_at
+                          ? "border-white/[0.04] bg-white/[0.02]"
+                          : "border-blue-500/20 bg-blue-500/[0.04]"
+                      }`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${n.read_at ? "bg-white/20" : "bg-blue-400"}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-white/80 text-xs font-medium truncate">{n.subject as string}</div>
+                        <div className={`text-white/35 text-[10.5px] mt-0.5 ${expanded ? "" : "line-clamp-1"}`}>
+                          {n.message as string}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
         </div>
 
         {/* ── AI Skill Gap Advice ───────────────────────────────────────── */}
@@ -454,37 +520,6 @@ export default function StudentDashboard() {
           </div>
         </div>
 
-        {/* ── Notifications ────────────────────────────────────────────── */}
-        <div className="glass-card">
-          <div className="flex items-center gap-2 mb-5">
-            <Bell size={16} className="text-amber-400" />
-            <h2 className="text-white font-semibold">Recent Notifications</h2>
-            <span className="badge-amber badge ml-auto text-[10px]">
-              {notifications.filter((n) => !n.read_at).length} unread
-            </span>
-          </div>
-          <div className="space-y-2">
-            {notifications.slice(0, 5).map((n, i) => (
-              <div
-                key={i}
-                className={`flex gap-4 p-4 rounded-xl border transition-colors ${
-                  n.read_at
-                    ? "border-white/[0.04] bg-white/[0.02]"
-                    : "border-blue-500/20 bg-blue-500/[0.04]"
-                }`}
-              >
-                <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${n.read_at ? "bg-white/20" : "bg-blue-400"}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-white/80 text-sm font-medium">{n.subject as string}</div>
-                  <div className="text-white/40 text-xs mt-0.5 line-clamp-2">{n.message as string}</div>
-                </div>
-                <div className="text-white/25 text-[10px] whitespace-nowrap">
-                  {formatDistanceToNow(new Date(n.created_at as string), { addSuffix: true })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
         {/* ── Edit Profile Modal ────────────────────────────────────────── */}
         {isEditModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">

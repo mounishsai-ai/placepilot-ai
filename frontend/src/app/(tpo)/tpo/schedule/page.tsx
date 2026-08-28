@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { motion } from "framer-motion";
-import { Calendar, Clock, Users, CheckCircle, AlertTriangle, Plus, Building2, ChevronDown, ChevronUp, Archive } from "lucide-react";
+import { Calendar, Clock, Users, CheckCircle, AlertTriangle, Plus, Building2, ChevronDown, ChevronUp, Archive, NotebookPen } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import toast from "react-hot-toast";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { scheduleAPI, drivesAPI } from "@/lib/api";
 import { useSearchParams } from "next/navigation";
 
@@ -148,6 +148,11 @@ function SchedulePageInner() {
   const [startDatetime, setStartDatetime] = useState(toLocalInputValue(now));
   const [endDatetime, setEndDatetime]     = useState(toLocalInputValue(inEightHours));
   const [creating, setCreating]         = useState(false);
+  const [panelNotes, setPanelNotes] = useState<{ id: string; panel_name: string | null; notes: string; created_at: string }[]>([]);
+
+  useEffect(() => {
+    scheduleAPI.getAllSessionNotes().then((res) => setPanelNotes(res.data)).catch(() => {});
+  }, []);
 
   const fetchSlots = useCallback(async () => {
     try {
@@ -432,6 +437,33 @@ function SchedulePageInner() {
                   highlight={group.driveId === highlightDriveId}
                 />
               ))}
+            </div>
+          )}
+
+          {panelNotes.length > 0 && (
+            <div className="glass-card">
+              <div className="flex items-center gap-2 mb-4">
+                <NotebookPen size={16} style={{ color: "var(--jade-d)" }} />
+                <h2 className="text-base">Notes <em>from panel members</em></h2>
+                <span className="ml-auto badge-green badge text-[10px]">{panelNotes.length}</span>
+              </div>
+              <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                {panelNotes.map((n) => (
+                  <div
+                    key={n.id}
+                    className="rounded-xl p-3"
+                    style={{ background: "var(--wash-2)", border: "1px solid var(--line)" }}
+                  >
+                    <div className="flex items-center justify-between mb-1 gap-2">
+                      <span className="font-medium text-sm">{n.panel_name ?? "Panel member"}</span>
+                      <span className="ct-mono text-[10px] flex-shrink-0" style={{ color: "var(--faint)" }}>
+                        {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                      </span>
+                    </div>
+                    <p className="text-xs" style={{ color: "var(--ash)" }}>{n.notes}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </main>

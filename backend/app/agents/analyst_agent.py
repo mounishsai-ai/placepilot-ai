@@ -123,9 +123,10 @@ _BLOCKED_COLUMNS = re.compile(
 )
 
 
-async def generate_sql(question: str) -> str:
+async def generate_sql(question: str, retry_hint: str = "") -> str:
+    prompt = question if not retry_hint else f"{question}\n\n{retry_hint}"
     try:
-        result = await generate_json(SQL_SYSTEM, question, caller="analyst_agent.sql")
+        result = await generate_json(SQL_SYSTEM, prompt, caller="analyst_agent.sql")
     except Exception as exc:  # noqa: BLE001 - the endpoint has a deliberate degraded response
         logger.warning("analyst_agent: SQL generation failed: {}", type(exc).__name__)
         return ""

@@ -13,11 +13,11 @@ from app.database import get_db, async_session_factory
 from app.models import (
     InterviewRound, InterviewSlot, Room, PanelMember,
     PanelAvailability, PlacementDrive, RoundType, UserRole,
-    MatchScore, User, Student,
+    MatchScore, User, Student, SessionNote,
 )
 from app.api.auth import get_current_user, require_role
 from app.agents.scheduler_agent import detect_all_conflicts
-from app.agents.panel_agent import generate_prep_brief, structure_debrief
+from app.agents.panel_agent import generate_prep_brief, structure_debrief, polish_session_note
 from app.agents import orchestrator
 from loguru import logger
 
@@ -141,8 +141,8 @@ async def list_rounds_for_drive(
             "id": r.id,
             "round_no": r.round_no,
             "round_type": r.round_type.value,
-            "start_datetime": r.start_datetime.isoformat() if r.start_datetime else None,
-            "end_datetime": r.end_datetime.isoformat() if r.end_datetime else None,
+            "start_datetime": r.start_datetime.isoformat() + "Z" if r.start_datetime else None,
+            "end_datetime": r.end_datetime.isoformat() + "Z" if r.end_datetime else None,
             "mode": r.mode,
             "venue": r.venue,
         }
@@ -184,8 +184,8 @@ async def list_all_slots(
             "student_name": s.student.name if s.student else None,
             "student_roll": s.student.roll_no if s.student else None,
             "round_type": s.round.round_type.value if s.round else None,
-            "slot_start": s.slot_start.isoformat(),
-            "slot_end": s.slot_end.isoformat(),
+            "slot_start": s.slot_start.isoformat() + "Z",
+            "slot_end": s.slot_end.isoformat() + "Z",
             "status": s.status.value,
             "result": s.result,
             "panel": s.panel_member.name if s.panel_member else None,
@@ -254,8 +254,8 @@ async def get_my_slots(
             "branch": s.student.branch if s.student else None,
             "cgpa": s.student.cgpa if s.student else None,
             "match_score": score,
-            "slot_start": s.slot_start.isoformat(),
-            "slot_end": s.slot_end.isoformat(),
+            "slot_start": s.slot_start.isoformat() + "Z",
+            "slot_end": s.slot_end.isoformat() + "Z",
             "room": s.room.name if s.room else None,
             "round_type": s.round.round_type.value if s.round else None,
             "status": s.status.value,
@@ -286,8 +286,8 @@ async def get_round_slots(
             "id": s.id,
             "student_name": s.student.name if s.student else None,
             "student_roll": s.student.roll_no if s.student else None,
-            "slot_start": s.slot_start.isoformat(),
-            "slot_end": s.slot_end.isoformat(),
+            "slot_start": s.slot_start.isoformat() + "Z",
+            "slot_end": s.slot_end.isoformat() + "Z",
             "status": s.status.value,
             "result": s.result,
             "panel": s.panel_member.name if s.panel_member else None,
@@ -399,6 +399,87 @@ async def prep_brief(
         "role": (jd or {}).get("role") or (drive.title if drive else None),
         "brief": brief,
     }
+
+
+async def _my_panel(current_user: User, db: AsyncSession) -> PanelMember:
+    result = await db.execute(select(PanelMember).where(PanelMember.user_id == current_user.id))
+    panel = result.scalar_one_or_none()
+    if not panel:
+        raise HTTPException(
+            status_code=404,
+            detail="No panel member record linked to your account. Contact the TPO.",
+        )
+    return panel
+
+
+class SessionNoteRequest(BaseModel):
+    notes: str
+
+
+@router.post("/session-notes")
+async def add_session_note(
+    body: SessionNoteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.PANEL)),
+):
+    """Notes on the day as a whole -- not tied to any one candidate's slot,
+    so they never touch InterviewSlot.feedback or a hiring result. Often
+    dictated by voice between interviews, so this runs the raw text through
+    the same structuring model as debrief before saving -- just prose
+    cleanup here, no scoring or recommendation, since there's no one
+    candidate for either to attach to."""
+    raw = (body.notes or "").strip()
+    if len(raw) < 5:
+        raise HTTPException(status_code=400, detail="Write a bit more first")
+    polished = await polish_session_note(raw)
+    panel = await _my_panel(current_user, db)
+    note = SessionNote(panel_id=panel.id, notes=polished)
+    db.add(note)
+    await db.commit()
+    return {"message": "Saved", "notes": polished}
+
+
+@router.get("/session-notes")
+async def list_session_notes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.PANEL)),
+):
+    panel = await _my_panel(current_user, db)
+    result = await db.execute(
+        select(SessionNote)
+        .where(SessionNote.panel_id == panel.id)
+        .order_by(SessionNote.created_at.desc())
+        .limit(10)
+    )
+    return [
+        {"id": n.id, "notes": n.notes, "created_at": n.created_at.isoformat() + "Z"}
+        for n in result.scalars().all()
+    ]
+
+
+@router.get("/session-notes/all")
+async def list_all_session_notes(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Every panel member's session-level notes, across every interview day --
+    the TPO side of the same feature panel members write into from their own
+    schedule page."""
+    result = await db.execute(
+        select(SessionNote)
+        .options(selectinload(SessionNote.panel))
+        .order_by(SessionNote.created_at.desc())
+        .limit(50)
+    )
+    return [
+        {
+            "id": n.id,
+            "panel_name": n.panel.name if n.panel else None,
+            "notes": n.notes,
+            "created_at": n.created_at.isoformat() + "Z",
+        }
+        for n in result.scalars().all()
+    ]
 
 
 class DebriefRequest(BaseModel):
