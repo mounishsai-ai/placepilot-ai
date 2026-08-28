@@ -1,0 +1,17 @@
+# Local scratch / test artifacts — curl dumps, JWTs, ad-hoc test data.
+# Never meant to be published; regenerated freely during dev.
+scratch_*
+*.log
+
+# Local AI-tool state (Kilo Code), not part of the project itself.
+.kilo/
+
+# Misc local files not part of the deliverable.
+DEPLOYMENT.md
+MY_SYSTEM_DESIGN.md
+SYSTEM_DESIGN.md
+available gemini models.md
+openinng instrutctions.md
+backend/.gcp_project.env
+college logo for poster.png
+
