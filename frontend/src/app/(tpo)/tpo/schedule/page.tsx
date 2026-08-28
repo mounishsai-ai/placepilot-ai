@@ -1,13 +1,14 @@
 "use client";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { motion } from "framer-motion";
-import { Calendar, Clock, Users, CheckCircle, AlertTriangle, Plus, Building2, ChevronDown, ChevronUp, Archive, NotebookPen } from "lucide-react";
+import { Calendar, Clock, Users, CheckCircle, AlertTriangle, Plus, Building2, ChevronDown, ChevronUp, Archive, NotebookPen, Crown, X } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import toast from "react-hot-toast";
 import { format, formatDistanceToNow } from "date-fns";
 import { scheduleAPI, drivesAPI } from "@/lib/api";
 import { useSearchParams } from "next/navigation";
+import OnyxPanel from "@/components/schedule/OnyxPanel";
 
 interface Slot {
   id: string;
@@ -148,6 +149,8 @@ function SchedulePageInner() {
   const [startDatetime, setStartDatetime] = useState(toLocalInputValue(now));
   const [endDatetime, setEndDatetime]     = useState(toLocalInputValue(inEightHours));
   const [creating, setCreating]         = useState(false);
+  const [negotiating, setNegotiating]   = useState(false);
+  const [negotiatingRoundId, setNegotiatingRoundId] = useState<string | null>(null);
   const [panelNotes, setPanelNotes] = useState<{ id: string; panel_name: string | null; notes: string; created_at: string }[]>([]);
 
   useEffect(() => {
@@ -210,9 +213,15 @@ function SchedulePageInner() {
     upcoming: slots.filter((s) => s.status !== "completed").length,
   };
 
+  const windowInvalid = new Date(toNaiveISO(endDatetime)) <= new Date(toNaiveISO(startDatetime));
+
   const handleCreateRound = async () => {
     if (!driveId) {
       toast.error("Select a drive first");
+      return;
+    }
+    if (windowInvalid) {
+      toast.error("Window End must be after Window Start — check the date on both, not just the time");
       return;
     }
     setCreating(true);
@@ -237,6 +246,38 @@ function SchedulePageInner() {
       toast.error(msg ?? "Failed to create schedule");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleCreateAndAskOnyx = async () => {
+    if (!driveId) {
+      toast.error("Select a drive first");
+      return;
+    }
+    if (windowInvalid) {
+      toast.error("Window End must be after Window Start — check the date on both, not just the time");
+      return;
+    }
+    setNegotiating(true);
+    try {
+      const res = await scheduleAPI.createRound({
+        drive_id: driveId,
+        round_no: 1,
+        round_type: roundType,
+        slot_duration_min: parseInt(slotDuration),
+        mode: "offline",
+        start_datetime: toNaiveISO(startDatetime),
+        end_datetime: toNaiveISO(endDatetime),
+      });
+      await scheduleAPI.askOnyx(res.data.id);
+      toast.success("Onyx dispatched — it's negotiating with the company's agent now.");
+      setNegotiatingRoundId(res.data.id);
+      setShowCreateRound(false);
+    } catch (err: unknown) {
+      const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
+      toast.error(msg ?? "Failed to dispatch Onyx");
+    } finally {
+      setNegotiating(false);
     }
   };
 
@@ -404,13 +445,34 @@ function SchedulePageInner() {
                     value={endDatetime}
                     onChange={(e) => setEndDatetime(e.target.value)}
                     className="w-full text-sm rounded-xl px-3 py-2 outline-none"
-                    style={{ background: "var(--wash-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
+                    style={{
+                      background: "var(--wash-2)",
+                      border: windowInvalid ? "1px solid #C2453F" : "1px solid var(--line)",
+                      color: "var(--fg)",
+                    }}
                   />
+                  {windowInvalid && (
+                    <p className="text-[11px] mt-1" style={{ color: "#C2453F" }}>
+                      Ends before it starts — check the date, not just the time (an overnight window needs the next day's date here).
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex gap-3 justify-end">
                 <button onClick={() => setShowCreateRound(false)} className="btn-ghost">Cancel</button>
-                <button onClick={handleCreateRound} disabled={creating} className="btn-primary flex items-center gap-2">
+                <button
+                  onClick={handleCreateAndAskOnyx}
+                  disabled={negotiating || creating || windowInvalid}
+                  className="btn-ghost flex items-center gap-2 disabled:opacity-40"
+                  style={{ color: "#7C5CBF", borderColor: "#7C5CBF55" }}
+                  title="Onyx dispatches the TPO and company agents to negotiate first — nothing is committed until you approve the outcome."
+                >
+                  {negotiating ? (
+                    <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: "#7C5CBF55", borderTopColor: "#7C5CBF" }} />
+                  ) : <Crown size={14} />}
+                  Ask Onyx
+                </button>
+                <button onClick={handleCreateRound} disabled={creating || negotiating || windowInvalid} className="btn-primary flex items-center gap-2 disabled:opacity-40">
                   {creating ? (
                     <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: "rgba(255,255,255,.3)", borderTopColor: "#fff" }} />
                   ) : <Calendar size={14} />}
@@ -418,6 +480,26 @@ function SchedulePageInner() {
                 </button>
               </div>
             </motion.div>
+          )}
+
+          {negotiatingRoundId && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base flex items-center gap-2" style={{ color: "var(--fg)" }}>
+                  <Crown size={16} style={{ color: "var(--faint)" }} /> Onyx <em>is on it</em>
+                </h2>
+                <button
+                  onClick={() => setNegotiatingRoundId(null)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-[var(--wash-2)]"
+                  style={{ border: "1px solid var(--line)", color: "var(--faint)" }}
+                  title="Close"
+                  aria-label="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <OnyxPanel roundId={negotiatingRoundId} />
+            </div>
           )}
 
           {loadingSlots ? (

@@ -17,9 +17,15 @@ interface Props {
   /** frozen ring, no animation — for dense lists where motion would be noise */
   still?: boolean;
   className?: string;
+  /** violet = a second, independent voice (matches the Auditor's colour in
+      AgentTrace) — used for the Company agent in the negotiation arena so
+      the two sides never read as the same speaker. onyx = the supervisor
+      itself — dark graphite, reads as "the boss" above jade/violet, not a
+      third peer. Overridden by `waiting`. */
+  tone?: "jade" | "violet" | "onyx";
 }
 
-export default function AgentOrb({ size = 26, waiting = false, still = false, className }: Props) {
+export default function AgentOrb({ size = 26, waiting = false, still = false, className, tone = "jade" }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -65,8 +71,8 @@ export default function AgentOrb({ size = 26, waiting = false, still = false, cl
 
     const cx = size / 2, cy = size / 2;
     const TILT = -0.42, ct = Math.cos(TILT), st = Math.sin(TILT);
-    const NEAR = waiting ? "217,146,43" : "15,169,104";
-    const FAR = waiting ? "240,190,107" : "52,216,154";
+    const PALETTE = { jade: ["15,169,104", "52,216,154"], gold: ["217,146,43", "240,190,107"], violet: ["124,92,191", "168,144,222"], onyx: ["24,25,31", "100,98,116"] } as const;
+    const [NEAR, FAR] = PALETTE[waiting ? "gold" : tone];
 
     let t = frozen ? 2400 : 0;
     let raf = 0;

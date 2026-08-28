@@ -6,6 +6,11 @@ scratch_*
 # Local AI-tool state (Kilo Code), not part of the project itself.
 .kilo/
 
+# Personal Obsidian vault notes — architecture explainer + tonight's plan,
+# not part of the deliverable.
+notes/
+.obsidian/
+
 # Misc local files not part of the deliverable.
 DEPLOYMENT.md
 MY_SYSTEM_DESIGN.md

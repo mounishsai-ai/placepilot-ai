@@ -144,6 +144,35 @@ export const scheduleAPI = {
   getSessionNotes: () => api.get("/api/schedule/session-notes"),
   /** TPO side -- every panel member's session notes. */
   getAllSessionNotes: () => api.get("/api/schedule/session-notes/all"),
+
+  /** Starts the two-agent negotiation (TPO agent vs the company's own agent)
+      for a round — discussion only, never writes a slot itself. */
+  negotiate: (roundId: string) => api.post(`/api/schedule/rounds/${roundId}/negotiate`),
+  /** Latest negotiation run for a round, full trace — both portals poll this. */
+  getNegotiation: (roundId: string) => api.get(`/api/schedule/rounds/${roundId}/negotiation`),
+  /** The one action a human takes: write the negotiated proposal as real slots. */
+  commitNegotiation: (runId: string) => api.post(`/api/schedule/negotiations/${runId}/commit`),
+
+  /** Dispatches Onyx, the supervisor agent — its tools start/read the same
+      negotiation above rather than touching the schedule directly, then it
+      reports to the TPO. Answer its report via agentAPI.answer(runId, ...). */
+  askOnyx: (roundId: string) => api.post(`/api/schedule/rounds/${roundId}/ask-onyx`),
+  /** Latest Onyx run for a round, full trace — same shape as getNegotiation. */
+  getOnyx: (roundId: string) => api.get(`/api/schedule/rounds/${roundId}/onyx`),
+};
+
+// ─── Onyx sidebar ─────────────────────────────────────────────────────────
+// Free-text, reachable from anywhere in the TPO portal — separate from the
+// per-round agentAPI/scheduleAPI runs above, which are all scoped to one
+// drive or round. `history` is Vertex's own `contents` list from the
+// previous response, round-tripped so the chat has real memory.
+export const onyxAPI = {
+  // A turn can chain 2-4 sequential Vertex calls (Onyx's own turn, plus
+  // ask_analyst's own SQL-generation + summary calls), sometimes with a
+  // 429 retry backoff on top -- the global 30s default clips this in
+  // practice even though the backend finishes fine a few seconds later.
+  chat: (message: string, history: Record<string, unknown>[]) =>
+    api.post("/api/onyx/chat", { message, history }, { timeout: 75000 }),
 };
 
 // ─── Notifications ────────────────────────────────────────────────────────

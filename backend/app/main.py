@@ -11,7 +11,7 @@ from sqlalchemy import update
 from app.config import settings
 from app.database import init_db, async_session_factory
 from app.models.models import AgentRun, AgentRunStatus
-from app.api import auth, drives, students, analytics, schedule, notifications, notices, websocket
+from app.api import auth, drives, students, analytics, schedule, notifications, notices, websocket, onyx
 
 
 @asynccontextmanager
@@ -82,6 +82,7 @@ app.include_router(analytics.router,     prefix="/api/analytics",     tags=["Ana
 app.include_router(schedule.router,      prefix="/api/schedule",      tags=["Scheduling"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
 app.include_router(notices.router,       prefix="/api/notices",       tags=["Notices"])
+app.include_router(onyx.router,          prefix="/api/onyx",          tags=["Onyx"])
 app.include_router(websocket.router,     prefix="/ws",                tags=["WebSocket"])
 
 
