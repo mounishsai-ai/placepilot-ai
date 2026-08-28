@@ -46,15 +46,31 @@ function timeOf(iso: string) {
    candidates instead of typing while walking to the next room. Chrome/Edge
    only (webkitSpeechRecognition); other browsers fall back to typing, which
    still works fine -- this is additive, never required. */
+// The TS DOM lib this project builds against doesn't ship Web Speech API
+// types, so these are hand-written to exactly what's used below -- not a
+// full spec, just enough to call the browser's own implementation safely.
+interface DictationResultEvent {
+  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+}
+interface DictationRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: DictationResultEvent) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+type DictationCtor = new () => DictationRecognition;
+
 function useDictation(onResult: (text: string) => void) {
   const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<InstanceType<NonNullable<typeof window.SpeechRecognition>> | null>(null);
+  const recognitionRef = useRef<DictationRecognition | null>(null);
 
   const toggle = () => {
-    const SpeechRecognitionCtor =
-      (window as unknown as { SpeechRecognition?: typeof window.SpeechRecognition; webkitSpeechRecognition?: typeof window.SpeechRecognition })
-        .SpeechRecognition ??
-      (window as unknown as { webkitSpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition;
+    const w = window as unknown as { SpeechRecognition?: DictationCtor; webkitSpeechRecognition?: DictationCtor };
+    const SpeechRecognitionCtor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
 
     if (!SpeechRecognitionCtor) {
       toast.error("Dictation isn't supported in this browser — try Chrome or Edge");
@@ -68,7 +84,7 @@ function useDictation(onResult: (text: string) => void) {
     recognition.continuous = true;
     recognition.interimResults = false;
     recognition.lang = "en-IN";
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event) => {
       const transcript = Array.from(event.results)
         .map((r) => r[0].transcript)
         .join(" ");
