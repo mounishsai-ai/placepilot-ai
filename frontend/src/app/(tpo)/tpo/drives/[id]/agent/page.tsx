@@ -314,16 +314,17 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
                 </div>
 
                 <div className="flex flex-col gap-3">
+                  {/* The stage tiles above already say "Waiting for you" /
+                      "Working" / etc. — this card used to repeat that exact
+                      label right below it. It earns its place with the
+                      metadata the tiles don't carry: which run, how long. */}
                   {status && (
                     <div className="glass p-4 flex items-center justify-between gap-3">
-                      <span className={status.className}>
-                        {run.status === "running" && <span className="ct-live-dot" />}
-                        {status.label}
+                      <span className="ct-mono text-[10px]" style={{ color: "var(--faint)" }}>
+                        Run ID: {run.id.slice(0, 8)}
                       </span>
-                      <span className="ct-mono text-[10px] text-right" style={{ color: "var(--faint)" }}>
-                        run {run.id.slice(0, 8)}
-                        <br />
-                        {(measured / 1000).toFixed(1)}s measured
+                      <span className="ct-mono text-[10px]" style={{ color: "var(--faint)" }}>
+                        Time taken: {(measured / 1000).toFixed(1)}s
                       </span>
                     </div>
                   )}
@@ -349,10 +350,6 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
                         <span className="ct-mono">{v}</span>
                       </div>
                     ))}
-                    <p className="text-[10.5px] leading-relaxed mt-2.5 pt-2.5" style={{ color: "var(--faint)", borderTop: "1px solid var(--line-2)" }}>
-                      Function calling over Vertex AI. Two different JDs produce{" "}
-                      <b style={{ color: "var(--jade-d)" }}>different traces</b> — no Python picks the next step.
-                    </p>
                   </div>
 
                   {(thinkMs > 0 || toolMs > 0) && (

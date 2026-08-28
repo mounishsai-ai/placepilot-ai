@@ -6,14 +6,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete, update
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db, async_session_factory
 from app.models import (
     PlacementDrive, DriveStatus, Company, EligibilityRule,
     EligibilityResult, MatchScore, Student, AgentEvent, UserRole, User,
-    AgentRun, AgentRunStatus, AgentTrace,
+    AgentRun, AgentRunStatus, AgentTrace, InterviewRound, InterviewSlot, Notice,
 )
 from app.api.auth import get_current_user, require_role
 from app.api.websocket import emit_agent_event
@@ -307,7 +307,7 @@ async def list_agent_runs(
     runs = result.scalars().all()
     return [
         {"id": r.id, "status": r.status.value, "pending_question": r.pending_question,
-         "created_at": r.created_at.isoformat()}
+         "created_at": r.created_at.isoformat() + "Z"}
         for r in runs
     ]
 
@@ -390,7 +390,7 @@ async def live_agent_runs(
                 {"seq": last.seq, "kind": last.kind, "summary": last.summary[:180]}
                 if last else None
             ),
-            "updated_at": run.updated_at.isoformat(),
+            "updated_at": run.updated_at.isoformat() + "Z",
         })
 
     # Paused first, then oldest — so the dock's single slot always shows the
@@ -422,17 +422,34 @@ async def get_agent_run(
         "drive_id": run.drive_id,
         "status": run.status.value,
         "pending_question": run.pending_question,
-        "created_at": run.created_at.isoformat(),
-        "updated_at": run.updated_at.isoformat(),
+        "created_at": run.created_at.isoformat() + "Z",
+        "updated_at": run.updated_at.isoformat() + "Z",
         "trace": [
             {
                 "seq": t.seq, "agent": t.agent, "kind": t.kind,
                 "summary": t.summary, "detail": t.detail,
-                "cost_ms": t.cost_ms, "created_at": t.created_at.isoformat(),
+                "cost_ms": t.cost_ms, "created_at": t.created_at.isoformat() + "Z",
             }
             for t in trace
         ],
     }
+
+
+# Must be registered before GET /{drive_id} below -- Starlette matches
+# routes in registration order, and {drive_id} is a greedy path param that
+# would otherwise swallow a literal request for /companies (drive_id=
+# "companies") and return 404 "Drive not found" instead of ever reaching
+# this handler. (Observed live: broke the TPO create-drive company picker.)
+@router.get("/companies")
+async def list_companies(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Every company on file — powers the company picker when a TPO creates
+    a drive on a company's behalf (there's no self-serve HR account yet for
+    every company in the seed data)."""
+    result = await db.execute(select(Company).order_by(Company.name))
+    return [{"id": c.id, "name": c.name} for c in result.scalars().all()]
 
 
 @router.get("/{drive_id}")
@@ -449,8 +466,8 @@ async def get_drive(
         "status": drive.status.value,
         "jd_parsed": drive.jd_parsed,
         "package_lpa": drive.package_lpa,
-        "deadline": drive.deadline.isoformat() if drive.deadline else None,
-        "created_at": drive.created_at.isoformat(),
+        "deadline": drive.deadline.isoformat() + "Z" if drive.deadline else None,
+        "created_at": drive.created_at.isoformat() + "Z",
     }
 
 
@@ -472,7 +489,7 @@ async def list_drives(
             "company": d.company.name if d.company else None,
             "status": d.status.value,
             "package_lpa": d.package_lpa,
-            "deadline": d.deadline.isoformat() if d.deadline else None,
+            "deadline": d.deadline.isoformat() + "Z" if d.deadline else None,
         }
         for d in drives
     ]
@@ -536,8 +553,8 @@ async def list_my_company_drives(
             "title": d.title,
             "status": d.status.value,
             "package_lpa": d.package_lpa,
-            "deadline": d.deadline.isoformat() if d.deadline else None,
-            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "deadline": d.deadline.isoformat() + "Z" if d.deadline else None,
+            "created_at": d.created_at.isoformat() + "Z" if d.created_at else None,
             "role": (d.jd_parsed or {}).get("role"),
             "candidates_matched": matched.scalar_one(),
             "candidates_shortlisted": shortlisted.scalar_one(),
@@ -669,7 +686,7 @@ async def get_drive_events(
             "agent_name": e.agent_name,
             "payload": e.payload,
             "actor": e.actor,
-            "created_at": e.created_at.isoformat(),
+            "created_at": e.created_at.isoformat() + "Z",
         }
         for e in events
     ]
@@ -705,3 +722,54 @@ async def restore_drive(
     drive.status = DriveStatus.DRAFT
     await db.commit()
     return {"message": "Drive restored to draft", "id": drive_id}
+
+
+# A drive with a confirmed schedule has real interview slots students may
+# already be relying on — archive (soft-delete) is the only option past that
+# point. Anything earlier is still entirely the agent's and TPO's own work,
+# so a hard delete is safe.
+_DELETABLE_STATUSES = {
+    DriveStatus.DRAFT, DriveStatus.JD_ANALYZED, DriveStatus.ELIGIBILITY_CHECKED,
+    DriveStatus.MATCHED, DriveStatus.SHORTLIST_PENDING, DriveStatus.SHORTLIST_APPROVED,
+    DriveStatus.SCHEDULE_PENDING,
+}
+
+
+@router.delete("/{drive_id}")
+async def delete_drive(
+    drive_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Hard delete — discards the drive and everything the agent has done on
+    it. Only allowed before a schedule is actually confirmed; use archive for
+    anything later, since real interview slots may exist by then."""
+    result = await db.execute(select(PlacementDrive).where(PlacementDrive.id == drive_id))
+    drive = result.scalar_one_or_none()
+    if not drive:
+        raise HTTPException(status_code=404, detail="Drive not found")
+    if drive.status not in _DELETABLE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="This drive already has a confirmed schedule — archive it instead of deleting.",
+        )
+
+    round_ids_result = await db.execute(
+        select(InterviewRound.id).where(InterviewRound.drive_id == drive_id)
+    )
+    round_ids = [r[0] for r in round_ids_result.all()]
+    if round_ids:
+        await db.execute(delete(InterviewSlot).where(InterviewSlot.round_id.in_(round_ids)))
+    await db.execute(delete(InterviewRound).where(InterviewRound.drive_id == drive_id))
+    await db.execute(delete(AgentTrace).where(AgentTrace.drive_id == drive_id))
+    await db.execute(delete(AgentRun).where(AgentRun.drive_id == drive_id))
+    await db.execute(delete(AgentEvent).where(AgentEvent.drive_id == drive_id))
+    await db.execute(delete(MatchScore).where(MatchScore.drive_id == drive_id))
+    await db.execute(delete(EligibilityResult).where(EligibilityResult.drive_id == drive_id))
+    await db.execute(delete(EligibilityRule).where(EligibilityRule.drive_id == drive_id))
+    # A notice mentioning this drive stays — it's a real message someone sent,
+    # just no longer pointing at a drive that exists.
+    await db.execute(update(Notice).where(Notice.drive_id == drive_id).values(drive_id=None))
+    await db.execute(delete(PlacementDrive).where(PlacementDrive.id == drive_id))
+    await db.commit()
+    return {"message": "Drive deleted", "id": drive_id}

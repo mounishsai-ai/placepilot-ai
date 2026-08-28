@@ -54,9 +54,13 @@ export const drivesAPI = {
   getEvents: (id: string) => api.get(`/api/drives/${id}/events`),
   archive: (id: string) => api.patch(`/api/drives/${id}/archive`),
   restore: (id: string) => api.patch(`/api/drives/${id}/restore`),
+  /** Hard delete — only accepted server-side before a schedule is confirmed. */
+  delete: (id: string) => api.delete(`/api/drives/${id}`),
   /** Drives belonging to the signed-in HR user's own company, with pipeline
       progress and the agent's latest step on each. */
   myCompany: () => api.get("/api/drives/mine/company"),
+  /** Every company on file — TPO's company picker when creating a drive. */
+  listCompanies: () => api.get("/api/drives/companies"),
 };
 
 // ─── Agent (orchestrator) ─────────────────────────────────────────────────
@@ -134,6 +138,12 @@ export const scheduleAPI = {
       result; that stays an explicit act via updateResult. */
   debrief: (slotId: string, notes: string) =>
     api.post(`/api/schedule/slots/${slotId}/debrief`, { notes }),
+  /** Notes on the day as a whole -- not tied to one candidate's slot. */
+  addSessionNote: (notes: string) =>
+    api.post("/api/schedule/session-notes", { notes }),
+  getSessionNotes: () => api.get("/api/schedule/session-notes"),
+  /** TPO side -- every panel member's session notes. */
+  getAllSessionNotes: () => api.get("/api/schedule/session-notes/all"),
 };
 
 // ─── Notifications ────────────────────────────────────────────────────────
@@ -144,6 +154,8 @@ export const notificationsAPI = {
     }),
   send: (data: object) => api.post("/api/notifications/send", data),
   markRead: (id: string) => api.patch(`/api/notifications/${id}/read`),
+  /** Every notification ever sent, across all students — the TPO history view. */
+  listAll: () => api.get("/api/notifications"),
   getOfflineQueue: () => api.get("/api/notifications/offline-queue"),
   retryOffline: () => api.post("/api/notifications/retry-offline"),
 };

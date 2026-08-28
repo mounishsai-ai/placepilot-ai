@@ -51,6 +51,7 @@ async def send_notice(
     notice = Notice(
         company_id=company.id,
         drive_id=body.drive_id,
+        sender_email=current_user.email,
         subject=body.subject,
         message=body.message,
     )
@@ -77,11 +78,12 @@ async def list_notices_for_tpo(
         {
             "id": n.id,
             "company": n.company.name if n.company else None,
+            "sender_email": n.sender_email,
             "drive_id": n.drive_id,
             "drive_title": n.drive.title if n.drive else None,
             "subject": n.subject,
             "message": n.message,
-            "created_at": n.created_at.isoformat(),
+            "created_at": n.created_at.isoformat() + "Z",
         }
         for n in notices
     ]
@@ -109,7 +111,7 @@ async def list_sent_notices(
             "drive_title": n.drive.title if n.drive else None,
             "subject": n.subject,
             "message": n.message,
-            "created_at": n.created_at.isoformat(),
+            "created_at": n.created_at.isoformat() + "Z",
         }
         for n in notices
     ]

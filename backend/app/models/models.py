@@ -299,7 +299,26 @@ class Notification(Base):
     student = relationship("Student", back_populates="notifications")
 
 
-# ─── Notices (HR → TPO) ────────────────────────────────────────────────────────
+# ─── Notices (HR → TPO) ──────────────────────────────────────────────────
+
+
+# ─── Panel Session Notes ────────────────────────────────────────────────
+# Separate from InterviewSlot.feedback (which is always about one candidate,
+# filed alongside their result). A panel member often has something to say
+# about the day as a whole -- room ran late, one drive's candidates were
+# consistently underprepared -- that has nowhere to attach to a single slot.
+
+class SessionNote(Base):
+    __tablename__ = "session_notes"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    panel_id = Column(String, ForeignKey("panel_members.id"), nullable=False)
+    notes = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    panel = relationship("PanelMember")
+
+
+# ─── Notices (HR → TPO) ──────────────────────────────────────────────────
 # A real, authored message from a specific company to the placement office —
 # distinct from the AgentEvent pipeline_started/pipeline_error blips below,
 # which stay exactly as they are (that's the audit trail). The seed data has
@@ -312,6 +331,7 @@ class Notice(Base):
     id = Column(String, primary_key=True, default=gen_uuid)
     company_id = Column(String, ForeignKey("companies.id"), nullable=False)
     drive_id = Column(String, ForeignKey("placement_drives.id"), nullable=True)
+    sender_email = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import TopBar from "@/components/layout/TopBar";
 import AgentOrb from "@/components/ui/AgentOrb";
-import { PrepTab, DebriefTab } from "@/components/panel/PanelAgentTabs";
+import { PrepTab, DebriefTab, SessionNotes } from "@/components/panel/PanelAgentTabs";
 import { scheduleAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import toast from "react-hot-toast";
@@ -116,7 +116,7 @@ export default function PanelSchedulePage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
-  const [tab, setTab] = useState<"schedule" | "prep" | "debrief">("schedule");
+  const [tab, setTab] = useState<"schedule" | "notes" | "prep" | "debrief">("schedule");
 
   useEffect(() => {
     scheduleAPI.getMySlots()
@@ -183,8 +183,9 @@ export default function PanelSchedulePage() {
           <div className="flex items-center gap-1" style={{ borderBottom: "1px solid var(--line)" }}>
             {([
               { key: "schedule", label: "My Schedule", agent: false },
+              { key: "notes",    label: "Session Notes", agent: false },
               { key: "prep",     label: "Candidate Prep", agent: true },
-              { key: "debrief",  label: "Debrief", agent: true },
+              { key: "debrief",  label: "Interview Notes", agent: true },
             ] as const).map((t) => {
               const on = tab === t.key;
               return (
@@ -205,6 +206,7 @@ export default function PanelSchedulePage() {
             })}
           </div>
 
+          {tab === "notes" && <SessionNotes />}
           {tab === "prep" && <PrepTab slots={slots} />}
           {tab === "debrief" && (
             <DebriefTab

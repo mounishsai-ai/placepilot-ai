@@ -1,12 +1,14 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, AlertCircle, MessageSquareQuote, Loader2,
-  CheckCircle, Pause, XCircle, FileCheck2,
+  CheckCircle, Pause, XCircle, FileCheck2, Users, NotebookPen,
+  Mic, MicOff,
 } from "lucide-react";
 import AgentOrb from "@/components/ui/AgentOrb";
 import { scheduleAPI } from "@/lib/api";
+import { formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
 
 /* The two places an interviewer's day has dead time in it.
@@ -38,6 +40,48 @@ export interface PanelSlot {
 
 function timeOf(iso: string) {
   return new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+}
+/* Browser-native Web Speech API (SpeechRecognition, i.e. dictation) -- no
+   key, no model, no backend call. So an interviewer can talk between two
+   candidates instead of typing while walking to the next room. Chrome/Edge
+   only (webkitSpeechRecognition); other browsers fall back to typing, which
+   still works fine -- this is additive, never required. */
+function useDictation(onResult: (text: string) => void) {
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<InstanceType<NonNullable<typeof window.SpeechRecognition>> | null>(null);
+
+  const toggle = () => {
+    const SpeechRecognitionCtor =
+      (window as unknown as { SpeechRecognition?: typeof window.SpeechRecognition; webkitSpeechRecognition?: typeof window.SpeechRecognition })
+        .SpeechRecognition ??
+      (window as unknown as { webkitSpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      toast.error("Dictation isn't supported in this browser — try Chrome or Edge");
+      return;
+    }
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = "en-IN";
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = Array.from(event.results)
+        .map((r) => r[0].transcript)
+        .join(" ");
+      onResult(transcript);
+    };
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
+  };
+
+  return { listening, toggle };
 }
 
 function SlotPicker({
@@ -120,8 +164,46 @@ export function PrepTab({ slots }: { slots: PanelSlot[] }) {
     }
   };
 
+  // Deterministic, not another model call -- what's assigned today doesn't
+  // need an opinion, just a count.
+  const overview = useMemo(() => {
+    if (pending.length === 0) return null;
+    const branches = new Map<string, number>();
+    const rounds = new Map<string, number>();
+    let cgpaSum = 0, cgpaCount = 0;
+    for (const s of pending) {
+      if (s.branch) branches.set(s.branch, (branches.get(s.branch) ?? 0) + 1);
+      if (s.round_type) rounds.set(s.round_type, (rounds.get(s.round_type) ?? 0) + 1);
+      if (s.cgpa != null) { cgpaSum += s.cgpa; cgpaCount += 1; }
+    }
+    return {
+      count: pending.length,
+      avgCgpa: cgpaCount > 0 ? (cgpaSum / cgpaCount).toFixed(2) : null,
+      branches: Array.from(branches.entries()).sort((a, b) => b[1] - a[1]),
+      rounds: Array.from(rounds.entries()).sort((a, b) => b[1] - a[1]),
+    };
+  }, [pending]);
+
   return (
     <div className="space-y-5">
+      {overview && (
+        <div className="glass-card">
+          <h2 className="font-display font-bold text-[15px] mb-3 flex items-center gap-2" style={{ color: "var(--fg)" }}>
+            <Users size={16} style={{ color: "var(--jade-d)" }} /> Today at a glance
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            <span className="badge badge-green text-[11px]">{overview.count} candidate{overview.count > 1 ? "s" : ""} left</span>
+            {overview.avgCgpa && <span className="badge badge-gray text-[11px]">avg CGPA {overview.avgCgpa}</span>}
+            {overview.branches.map(([b, n]) => (
+              <span key={b} className="badge badge-blue text-[11px]">{n} {b}</span>
+            ))}
+            {overview.rounds.map(([r, n]) => (
+              <span key={r} className="badge badge-gray text-[11px] capitalize">{n} {r}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="glass-card">
         <h2 className="font-display font-bold text-[15px] mb-1" style={{ color: "var(--fg)" }}>
           Who are you seeing next?
@@ -259,6 +341,102 @@ const REC_STYLE: Record<string, { label: string; fg: string; bg: string; bd: str
   on_hold:  { label: "Hold", fg: "var(--fg)",     bg: "var(--wash-2)", bd: "var(--line)", icon: <Pause size={14} /> },
   rejected: { label: "Pass", fg: "var(--rose)",   bg: "var(--rose-lt)", bd: "#F3D6D4", icon: <XCircle size={14} /> },
 };
+
+// Session-level notes -- the day as a whole, not one candidate's slot. Kept
+// entirely separate from InterviewSlot.feedback, which always ties to a
+// filed result for one person.
+export function SessionNotes() {
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [recent, setRecent] = useState<{ id: string; notes: string; created_at: string }[]>([]);
+  const baseNotesRef = useRef("");
+
+  const load = () => {
+    scheduleAPI.getSessionNotes().then((r) => setRecent(r.data)).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+
+  const dictation = useDictation((transcript) => {
+    setNotes(baseNotesRef.current ? `${baseNotesRef.current} ${transcript}` : transcript);
+  });
+
+  const startDictation = () => {
+    baseNotesRef.current = notes.trim();
+    dictation.toggle();
+  };
+
+  const save = async () => {
+    if (notes.trim().length < 5 || saving) return;
+    setSaving(true);
+    try {
+      // The backend runs this through the same structuring model as debrief
+      // before storing it -- useful either way, but especially so straight
+      // out of dictation, which tends to run on.
+      const res = await scheduleAPI.addSessionNote(notes.trim());
+      setNotes("");
+      toast.success(res.data?.notes ? "Saved — cleaned up by the agent" : "Saved");
+      load();
+    } catch {
+      toast.error("Couldn't save that note");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="glass-card">
+      <h2 className="font-display font-bold text-[15px] mb-1 flex items-center gap-2" style={{ color: "var(--fg)" }}>
+        <NotebookPen size={16} style={{ color: "var(--jade-d)" }} /> Notes on the session overall
+      </h2>
+      <p className="text-[12px] mb-3" style={{ color: "var(--ash)" }}>
+        Not about one candidate -- room ran late, a batch was underprepared, anything about the day.
+        Dictate it between interviews or type it — either way, it's cleaned up before saving.
+      </p>
+      <div className="relative">
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          placeholder="e.g. Room 2's projector kept cutting out between interviews."
+          className="input-glass w-full !text-[13px] resize-none !pr-11"
+        />
+        <button
+          onClick={startDictation}
+          title={dictation.listening ? "Stop dictating" : "Dictate instead of typing"}
+          className="absolute top-2.5 right-2.5 w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+          style={{
+            background: dictation.listening ? "var(--gold-lt)" : "var(--wash-2)",
+            color: dictation.listening ? "var(--gold-d)" : "var(--faint)",
+          }}
+        >
+          {dictation.listening ? <MicOff size={14} /> : <Mic size={14} />}
+        </button>
+      </div>
+      {dictation.listening && (
+        <p className="ct-mono text-[10.5px] mt-1.5" style={{ color: "var(--gold-d)" }}>
+          Listening… tap the mic again to stop.
+        </p>
+      )}
+      <button
+        onClick={save}
+        disabled={notes.trim().length < 5 || saving}
+        className="btn-ghost mt-2.5 !text-[12.5px] disabled:opacity-40"
+      >
+        {saving ? "Saving…" : "Save session note"}
+      </button>
+      {recent.length > 0 && (
+        <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop: "1px solid var(--line-2)" }}>
+          {recent.map((n) => (
+            <div key={n.id} className="text-[12px]" style={{ color: "var(--ash)" }}>
+              <span style={{ color: "var(--faint)" }}>{formatDistanceToNow(new Date(n.created_at), { addSuffix: true })} — </span>
+              {n.notes}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function DebriefTab({
   slots, onFiled,

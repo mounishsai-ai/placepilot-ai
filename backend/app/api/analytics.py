@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from collections import defaultdict
+from loguru import logger
 
 from app.agents.analyst_agent import generate_sql, summarize_rows, validate_readonly_sql
 from app.database import get_db
@@ -37,16 +38,41 @@ async def ask_placement_analyst(
     ever hands it to PostgreSQL. A bad generation deliberately has the same
     user-facing outcome as a failed query: helpful retry guidance, never an
     implementation detail that could reveal the schema or invite query probing.
+
+    One self-correcting retry: the same question, worded identically, does not
+    always generate the same SQL — a live "how many CSE students have a CGPA
+    above 8" failed once against valid schema/columns with nothing logged on
+    the reject path, which made it undiagnosable. Rather than accept that as
+    inherent model variance, give the model one more attempt with the exact
+    rejected SQL shown back to it before giving up.
     """
     generated_sql = await generate_sql(request.question)
     safe_sql = validate_readonly_sql(generated_sql)
     if not safe_sql:
-        return {
-            "answer": "I couldn't answer that one — try rephrasing it as a placement-data question.",
-            "sql": "",
-            "row_count": 0,
-            "sample_rows": [],
-        }
+        logger.warning(
+            "analyst_agent: rejected SQL for {!r}: {!r} — retrying once",
+            request.question, generated_sql,
+        )
+        retry_sql = await generate_sql(
+            request.question,
+            retry_hint=(
+                f"Your previous answer was rejected: {generated_sql or '(empty)'}. "
+                "Use only the exact tables and columns listed above, one plain "
+                "SELECT, explicit JOINs, no CTEs, no SELECT *."
+            ),
+        )
+        safe_sql = validate_readonly_sql(retry_sql)
+        if not safe_sql:
+            logger.warning(
+                "analyst_agent: rejected SQL again for {!r}: {!r} — giving up",
+                request.question, retry_sql,
+            )
+            return {
+                "answer": "I couldn't answer that one — try rephrasing it as a placement-data question.",
+                "sql": "",
+                "row_count": 0,
+                "sample_rows": [],
+            }
 
     try:
         result = await db.execute(text(safe_sql))
@@ -109,7 +135,7 @@ async def get_tpo_dashboard(
             "event_type": e.event_type,
             "agent_name": e.agent_name,
             "drive_id": e.drive_id,
-            "created_at": e.created_at.isoformat(),
+            "created_at": e.created_at.isoformat() + "Z",
         }
         for e in events_result.scalars().all()
     ]
@@ -217,7 +243,7 @@ async def get_exceptions(
                 "roll_no": r.student.roll_no if r.student else None,
                 "eligible": r.eligible,
                 "reasons": r.reason,
-                "checked_at": r.checked_at.isoformat(),
+                "checked_at": r.checked_at.isoformat() + "Z",
             }
             for r in rows
         ],
@@ -297,7 +323,7 @@ async def get_audit_trail(
             "agent_name": e.agent_name,
             "actor": e.actor,
             "payload": e.payload,
-            "created_at": e.created_at.isoformat(),
+            "created_at": e.created_at.isoformat() + "Z",
         }
         for e in events
     ]

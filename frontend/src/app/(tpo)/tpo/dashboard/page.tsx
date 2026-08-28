@@ -235,26 +235,49 @@ export default function TPODashboard() {
 
           {/* ── Pipeline Status + Agent Activity ──────────────────────── */}
           <div className="grid grid-cols-3 gap-5">
-            {/* Pipeline Status — 1/3 */}
+            {/* Notices from companies — 1/3. Swapped in for the old Pipeline
+                Status card, which was mostly empty space in this slot — its
+                three numbers moved to a compact strip below instead. */}
             <div className="glass-card">
-              <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-4">
-                Pipeline Status
-              </h3>
-              <div className="space-y-3">
-                {[
-                  { label: "Pending Approvals", value: (kpis as Record<string,unknown>)?.pending_approvals ?? 0, color: "bg-amber-400" },
-                  { label: "Completed Drives",  value: (kpis as Record<string,unknown>)?.completed_drives ?? 0,  color: "bg-emerald-400" },
-                  { label: "Total Students",    value: (kpis as Record<string,unknown>)?.total_students ?? 0,    color: "bg-blue-400"    },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${item.color}`} />
-                      <span className="text-white/60 text-sm">{item.label}</span>
-                    </div>
-                    <span className="text-white font-semibold text-sm">{String(item.value)}</span>
-                  </div>
-                ))}
+              <div className="flex items-center gap-2 mb-4">
+                <Mail size={16} style={{ color: "var(--jade-d)" }} />
+                <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--ash)" }}>
+                  Notices <em>from companies</em>
+                </h3>
+                <span className="ml-auto badge-green badge text-[10px]">
+                  {exceptionsLoading ? "…" : notices.length}
+                </span>
               </div>
+              {exceptionsLoading ? (
+                <div className="space-y-2">
+                  {[1, 2].map((i) => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: "var(--line-2)" }} />)}
+                </div>
+              ) : notices.length === 0 ? (
+                <div className="text-center text-sm py-10" style={{ color: "var(--faint)" }}>
+                  No notices yet — companies can send one from their portal.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
+                  {notices.map((n) => (
+                    <div
+                      key={n.id as string}
+                      className="rounded-xl p-3"
+                      style={{ background: "var(--wash-2)", border: "1px solid var(--line)" }}
+                    >
+                      <div className="flex items-center justify-between mb-1 gap-2">
+                        <span className="font-medium text-sm truncate">{n.subject as string}</span>
+                        <span className="ct-mono text-[10px] flex-shrink-0" style={{ color: "var(--faint)" }}>
+                          {formatDistanceToNow(new Date(n.created_at as string), { addSuffix: true })}
+                        </span>
+                      </div>
+                      <p className="text-xs mb-1.5" style={{ color: "var(--ash)" }}>{n.message as string}</p>
+                      <div className="ct-mono text-[10px]" style={{ color: "var(--jade-d)" }}>
+                        {n.company as string} · {n.sender_email as string}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Agent Activity — 2/3, fed from WS + historical audit trail */}
@@ -406,49 +429,22 @@ export default function TPODashboard() {
             </div>
           </div>
 
-          {/* ── Notices from companies ───────────────────────────────────── */}
-          {/* A real, authored message from a specific HR user — not the
-              auto-generated pipeline_started/pipeline_error blips in the
-              Onyx activity feed above, which stay exactly as they are (the
-              audit trail). This is the actual communication surface. */}
-          <div className="glass-card">
-            <div className="flex items-center gap-2 mb-4">
-              <Mail size={16} style={{ color: "var(--jade-d)" }} />
-              <h2 className="text-base">Notices <em>from companies</em></h2>
-              <span className="ml-auto badge-green badge text-[10px]">
-                {exceptionsLoading ? "…" : notices.length}
-              </span>
-            </div>
-            {exceptionsLoading ? (
-              <div className="space-y-2">
-                {[1, 2].map((i) => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: "var(--line-2)" }} />)}
+          {/* -- Pipeline status -------------------------------------------- */}
+          {/* Used to be a tall narrow card next to Onyx activity -- mostly
+              empty space under three numbers. A compact strip carries the
+              same three numbers without the odd leftover whitespace. */}
+          <div className="glass-card flex items-center justify-around py-4">
+            {[
+              { label: "Pending Approvals", value: (kpis as Record<string,unknown>)?.pending_approvals ?? 0, color: "var(--gold)" },
+              { label: "Completed Drives",  value: (kpis as Record<string,unknown>)?.completed_drives ?? 0,  color: "var(--jade)" },
+              { label: "Total Students",    value: (kpis as Record<string,unknown>)?.total_students ?? 0,    color: "var(--blue)" },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center gap-2.5">
+                <div className="w-2 h-2 rounded-full" style={{ background: item.color }} />
+                <span className="text-sm" style={{ color: "var(--ash)" }}>{item.label}</span>
+                <span className="font-display font-bold text-lg" style={{ color: "var(--fg)" }}>{String(item.value)}</span>
               </div>
-            ) : notices.length === 0 ? (
-              <div className="text-center text-sm py-10" style={{ color: "var(--faint)" }}>
-                No notices yet — companies can send one from their portal.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {notices.map((n) => (
-                  <div
-                    key={n.id as string}
-                    className="rounded-xl p-3"
-                    style={{ background: "var(--wash-2)", border: "1px solid var(--line)" }}
-                  >
-                    <div className="flex items-center justify-between mb-1 gap-2">
-                      <span className="font-medium text-sm">{n.subject as string}</span>
-                      <span className="ct-mono text-[10px] flex-shrink-0" style={{ color: "var(--faint)" }}>
-                        {formatDistanceToNow(new Date(n.created_at as string), { addSuffix: true })}
-                      </span>
-                    </div>
-                    <p className="text-xs mb-1.5" style={{ color: "var(--ash)" }}>{n.message as string}</p>
-                    <div className="ct-mono text-[10px]" style={{ color: "var(--jade-d)" }}>
-                      {n.company as string}{n.drive_title ? ` · ${n.drive_title as string}` : ""}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            ))}
           </div>
         </main>
       </div>
