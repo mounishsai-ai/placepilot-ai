@@ -359,13 +359,27 @@ async def _exec_rank_candidates(ctx: ToolContext, args: dict) -> dict:
     # A re-run within the same conversation (the TPO asked for more/fewer
     # candidates) must replace the previous ranking, not append to it — the
     # (drive_id, student_id) pair isn't unique, so a second insert without
-    # this would double-count everyone still in both rankings.
+    # this would double-count everyone still in both rankings. But a delete
+    # + reinsert also wipes shortlisted/tpo_override — meaning a TPO who had
+    # already checked candidates, then asked for "10 more", would see every
+    # checkbox reset, including ones they'd already reviewed. Carry those
+    # flags forward for any student who's still in the new ranking.
+    prior_result = await ctx.db.execute(
+        select(MatchScore.student_id, MatchScore.shortlisted, MatchScore.tpo_override, MatchScore.tpo_override_reason)
+        .where(MatchScore.drive_id == ctx.drive_id, MatchScore.shortlisted == True)
+    )
+    prior_shortlisted = {r.student_id: (r.tpo_override, r.tpo_override_reason) for r in prior_result.all()}
+
     await ctx.db.execute(delete(MatchScore).where(MatchScore.drive_id == ctx.drive_id))
 
     for m in matches:
+        carried = prior_shortlisted.get(m["student_id"])
         ctx.db.add(MatchScore(
             drive_id=ctx.drive_id, student_id=m["student_id"],
             score=m["score"], rank=m["rank"], explanation=m.get("explanation"),
+            shortlisted=carried is not None,
+            tpo_override=carried[0] if carried else False,
+            tpo_override_reason=carried[1] if carried else None,
         ))
     await ctx.db.commit()
 

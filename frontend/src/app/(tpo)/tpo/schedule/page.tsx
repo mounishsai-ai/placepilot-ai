@@ -498,7 +498,7 @@ function SchedulePageInner() {
                   <X size={14} />
                 </button>
               </div>
-              <OnyxPanel roundId={negotiatingRoundId} />
+              <OnyxPanel roundId={negotiatingRoundId} onCommitted={fetchSlots} />
             </div>
           )}
 

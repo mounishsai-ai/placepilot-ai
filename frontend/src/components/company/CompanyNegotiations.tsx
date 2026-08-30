@@ -22,8 +22,9 @@ export default function CompanyNegotiations() {
   useEffect(() => {
     drivesAPI.myCompany()
       .then((res) => {
-        setDrives(res.data);
-        if (res.data.length > 0) setDriveId(res.data[0].id);
+        const list: MyDrive[] = res.data.drives ?? [];
+        setDrives(list);
+        if (list.length > 0) setDriveId(list[0].id);
       })
       .finally(() => setLoading(false));
   }, []);

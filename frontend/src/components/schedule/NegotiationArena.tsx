@@ -88,7 +88,7 @@ function FlightCard({ step, side }: { step: TraceStep; side: "left" | "right" })
   );
 }
 
-export default function NegotiationArena({ roundId, canCommit }: { roundId: string; canCommit: boolean }) {
+export default function NegotiationArena({ roundId, canCommit, onCommitted }: { roundId: string; canCommit: boolean; onCommitted?: () => void }) {
   const [run, setRun] = useState<NegotiationRun | null | undefined>(undefined);
   const [committing, setCommitting] = useState(false);
   const [burst, setBurst] = useState(false);
@@ -131,6 +131,7 @@ export default function NegotiationArena({ roundId, canCommit }: { roundId: stri
       const res = await scheduleAPI.commitNegotiation(run.id);
       toast.success(`Committed ${res.data.committed_count} slots`);
       setRun({ ...run, status: "completed" });
+      onCommitted?.();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(msg ?? "Failed to commit the negotiated schedule");

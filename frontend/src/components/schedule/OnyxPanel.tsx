@@ -62,7 +62,7 @@ function OnyxLine({ step }: { step: TraceStep }) {
   );
 }
 
-export default function OnyxPanel({ roundId }: { roundId: string }) {
+export default function OnyxPanel({ roundId, onCommitted }: { roundId: string; onCommitted?: () => void }) {
   const [run, setRun] = useState<OnyxRun | null | undefined>(undefined);
   const [acking, setAcking] = useState(false);
   const stopRef = useRef(false);
@@ -160,7 +160,7 @@ export default function OnyxPanel({ roundId }: { roundId: string }) {
         )}
       </div>
 
-      <NegotiationArena roundId={roundId} canCommit />
+      <NegotiationArena roundId={roundId} canCommit onCommitted={onCommitted} />
     </div>
   );
 }
