@@ -243,9 +243,9 @@ export default function StudentDashboard() {
                   { label: "Active Backlogs",  value: (profile as Record<string,unknown>)?.backlogs_active },
                   { label: "Attendance",       value: (profile as Record<string,unknown>)?.attendance_pct != null ? `${(profile as Record<string,unknown>).attendance_pct}%` : null },
                 ].map(item => (
-                  <div key={item.label} className="flex justify-between">
-                    <span className="text-white/40 text-sm">{item.label}</span>
-                    <span className="text-white font-semibold text-sm">{item.value != null ? String(item.value) : "—"}</span>
+                  <div key={item.label} className="flex items-start justify-between gap-3">
+                    <span className="text-white/40 text-sm flex-shrink-0">{item.label}</span>
+                    <span className="text-white font-semibold text-sm text-right">{item.value != null ? String(item.value) : "—"}</span>
                   </div>
                 ))}
 

@@ -189,7 +189,7 @@ _PROFILES = {
 }
 
 MAX_STEPS = 15
-MAX_NEGOTIATION_STEPS = 12
+MAX_NEGOTIATION_STEPS = 18
 MAX_NEGOTIATION_ROUNDS = 3
 
 
@@ -826,10 +826,29 @@ async def _run_negotiation_loop_inner(db: AsyncSession, run: AgentRun, ctx: Sche
         run.state_json = _snapshot_state(run, contents)
         await db.commit()
 
-    run.status = AgentRunStatus.FAILED
+    # Ran out of steps without the model itself calling ask_human -- still
+    # hand the TPO something usable rather than a dead-end failure. If a
+    # proposal exists (even an imperfect one), stash it as final_proposal so
+    # "Commit this schedule" still works; the TPO decides, not a step count.
+    has_proposal = bool(ctx.proposed_slots)
+    violation_count = len(ctx.last_violations or [])
+    if has_proposal and violation_count == 0:
+        reason = "I have a clean proposal ready but never got a final answer from the company's agent in time."
+    elif has_proposal:
+        reason = f"The last proposal I had still has {violation_count} unresolved conflict(s) I couldn't clear in time."
+    else:
+        reason = "I couldn't produce a workable proposal at all -- most likely not enough panels or rooms for this many students in the given window."
+    question = f"I ran out of negotiation steps before reaching full agreement. {reason} Please review and decide how to proceed."
+
+    run.status = AgentRunStatus.PAUSED
+    run.pending_question = {"question": question}
+    state = _snapshot_state(run, contents)
+    if has_proposal:
+        state["final_proposal"] = _serialize_proposal(ctx)
+    run.state_json = state
     await db.commit()
     seq += 1
     await _log_trace(
-        db, run, seq, "orchestrator", "violation",
-        f"exceeded {MAX_NEGOTIATION_STEPS} steps without reaching a TPO handoff",
+        db, run, seq, "orchestrator", "ask_human", question,
+        detail={"reason": "step_budget_exhausted", "violation_count": violation_count, "has_proposal": has_proposal},
     )

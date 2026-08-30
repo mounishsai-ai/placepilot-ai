@@ -436,7 +436,7 @@ export default function CompanyDashboard() {
                 {/* Summary */}
                 {Boolean(parsedJD.job_description_summary) && (
                   <div className="bg-blue-500/[0.06] border border-blue-500/15 rounded-xl px-4 py-3 mb-6">
-                    <p className="text-blue-200/70 text-sm italic">
+                    <p className="text-sm italic" style={{ color: "var(--ink)" }}>
                       &ldquo;{parsedJD.job_description_summary as string}&rdquo;
                     </p>
                   </div>

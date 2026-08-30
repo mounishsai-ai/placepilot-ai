@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { Cpu, Mail, Lock, Loader2, ChevronRight, Zap, Users, Brain, CheckCircle } from "lucide-react";
+import { Cpu, Mail, Lock, Loader2, ChevronRight, Zap, Users, Brain, CheckCircle, Orbit } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import toast from "react-hot-toast";
 
@@ -14,9 +15,9 @@ const ROLES = [
 ];
 
 const FEATURES = [
-  { icon: Brain,        color: "text-blue-400",   bg: "bg-blue-500/15",    label: "Gemini AI",           desc: "JD parsing, candidate matching & explanations" },
+  { icon: Brain,        color: "text-blue-400",   bg: "bg-blue-500/15",    label: "Gemini 2.5 Flash",    desc: "Real function-calling agent loops, not scripted steps" },
   { icon: Users,        color: "text-emerald-400", bg: "bg-emerald-500/15", label: "200+ Students",       desc: "Automatically screened and ranked in seconds"  },
-  { icon: Zap,          color: "text-purple-400",  bg: "bg-purple-500/15",  label: "LangGraph Pipeline",  desc: "Multi-agent orchestration with human-in-the-loop" },
+  { icon: Zap,          color: "text-purple-400",  bg: "bg-purple-500/15",  label: "Onyx Supervisor",     desc: "Dispatches and reports on agents negotiating your schedule" },
   { icon: CheckCircle,  color: "text-amber-400",   bg: "bg-amber-500/15",   label: "4 Portals",           desc: "TPO · Student · Company · Panel — all in one"  },
 ];
 
@@ -24,7 +25,7 @@ const STATS = [
   { value: "201", label: "Students" },
   { value: "10",  label: "Drives"   },
   { value: "37",  label: "Matched"  },
-  { value: "4",   label: "AI Agents"},
+  { value: "9",   label: "AI Agents"},
 ];
 
 export default function LoginPage() {
@@ -110,8 +111,9 @@ export default function LoginPage() {
             </span>
           </h2>
           <p className="text-white/45 text-sm leading-relaxed mb-8 max-w-sm">
-            From JD upload to interview scheduling — fully automated with
-            Gemini AI, LangGraph agents, and human-in-the-loop approvals.
+            From JD upload to interview scheduling — real Gemini agents that
+            pick their own next step, negotiate schedules with each other,
+            and always leave the final call to a human.
           </p>
 
           {/* Feature list */}
@@ -153,7 +155,7 @@ export default function LoginPage() {
 
           {/* Tech badges */}
           <div className="flex flex-wrap gap-2 mt-6">
-            {["Gemini Flash", "LangGraph", "FastAPI", "ChromaDB", "Next.js 14", "PostgreSQL"].map(t => (
+            {["Gemini 2.5 Flash", "Vertex AI", "FastAPI", "Cloud Run", "Next.js 14", "PostgreSQL"].map(t => (
               <span key={t} className="badge badge-gray text-[10px]">{t}</span>
             ))}
           </div>
@@ -237,6 +239,26 @@ export default function LoginPage() {
           </div>
         </motion.div>
       </div>
+
+      {/* Side link, not part of the portal -- a public 3D map of every agent
+          and its tools, viewable before anyone signs in. */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 1.1 }}
+        className="absolute bottom-6 right-6"
+      >
+        <Link
+          href="/architecture"
+          className="group flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full transition-all duration-200"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}
+        >
+          <Orbit size={15} className="text-emerald-400 group-hover:rotate-90 transition-transform duration-500" />
+          <span className="text-white/60 group-hover:text-white/90 text-xs font-medium transition-colors">
+            See the agent architecture in 3D
+          </span>
+        </Link>
+      </motion.div>
     </main>
   );
 }
