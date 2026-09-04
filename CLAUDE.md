@@ -1,4 +1,4 @@
-# CLAUDE.md — Jade (AI Campus Placement Agent)
+# CLAUDE.md — PlacePilot AI (AI Campus Placement Agent)
 
 Single source of truth for this repo. Supersedes AGENTS.md and AGENTIC_OVERHAUL.md
 (deleted 2026-08-27 — their content is folded in here, denser). If either file
@@ -24,7 +24,7 @@ not just be told.
   genuinely doesn't work yet, say so plainly — judges reward candor.
 
 ## Stack (as actually built, not as originally planned)
-- **Frontend:** Next.js 14 App Router, TS, Tailwind. Jade design system —
+- **Frontend:** Next.js 14 App Router, TS, Tailwind. PlacePilot design system —
   light theme, dense/editorial, NOT the old dark glassmorphism.
 - **Backend:** FastAPI, async SQLAlchemy, PostgreSQL (Cloud SQL in prod).
 - **LLM:** Vertex AI Gemini — NOT AI Studio free tier (20 req/day ceiling

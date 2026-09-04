@@ -4,7 +4,7 @@ import os
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "AI Campus Placement Agent"
+    APP_NAME: str = "PlacePilot AI"
     APP_ENV: str = "development"
     SECRET_KEY: str = "dev-secret-key-change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
