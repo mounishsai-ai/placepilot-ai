@@ -877,16 +877,20 @@ function DriveCard({
 
         {/* Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* The trace is the whole argument of this project — it gets a
-              first-class entry point on every drive, not a hidden menu item. */}
-          <Link
-            href={`/tpo/drives/${drive.id}/agent`}
-            className="text-xs font-semibold flex items-center gap-1.5 py-1.5 px-3 rounded-lg transition-colors"
-            style={{ color: "var(--jade-d)", background: "var(--wash)", border: "1px solid #CBEDDD" }}
-            title="Watch the agent decide each step"
-          >
-            <Radio size={13} /> Watch Onyx think
-          </Link>
+          {/* Only offered where it is actually the next thing to do. It used to
+              sit on every row in every state, which put a second, competing
+              call-to-action next to "Confirm Schedule" on drives whose
+              shortlisting was long finished. */}
+          {drive.status === "shortlist_pending" && (
+            <Link
+              href={`/tpo/drives/${drive.id}/agent`}
+              className="text-xs font-semibold flex items-center gap-1.5 py-1.5 px-3 rounded-lg transition-colors"
+              style={{ color: "var(--jade-d)", background: "var(--wash)", border: "1px solid #CBEDDD" }}
+              title="Review how the agent ranked these candidates, then approve"
+            >
+              <Radio size={13} /> Shortlist with Onyx
+            </Link>
+          )}
           {drive.status === "draft" && (
             <button
               onClick={() => onRunPipeline(drive.id)}
