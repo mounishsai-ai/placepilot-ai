@@ -38,7 +38,7 @@ export default function ArchitecturePage() {
           className="font-bold text-2xl tracking-tight"
           style={{ color: "#F5F6EF", fontFamily: "Georgia, serif" }}
         >
-          Jade — Agent Architecture
+          PlacePilot AI — Agent Architecture
         </h1>
         <p className="text-[13px] mt-1 max-w-sm" style={{ color: "#7C8478" }}>
           Nine real agents, one shared engine. Every tool listed here is a live function in the deployed backend.

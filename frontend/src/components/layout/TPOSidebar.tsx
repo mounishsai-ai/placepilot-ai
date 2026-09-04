@@ -38,7 +38,7 @@ export default function TPOSidebar() {
           </div>
           <div>
             <div className="font-display font-bold text-[14.5px] leading-tight" style={{ color: "var(--fg)" }}>
-              PlacementAI
+              PlacePilot AI
             </div>
             <div className="ct-mono text-[8px] tracking-[0.13em] mt-0.5" style={{ color: "var(--faint)" }}>
               TPO PORTAL

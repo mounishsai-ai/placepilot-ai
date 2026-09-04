@@ -96,7 +96,7 @@ export default function LoginPage() {
               <Cpu size={22} className="text-white" />
             </motion.div>
             <div>
-              <h1 className="text-white font-bold text-xl leading-none">PlacementAI</h1>
+              <h1 className="text-white font-bold text-xl leading-none">PlacePilot AI</h1>
               <p className="text-white/40 text-xs mt-0.5">Campus Placement Operations</p>
             </div>
           </div>

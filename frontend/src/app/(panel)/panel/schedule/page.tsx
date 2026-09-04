@@ -38,7 +38,7 @@ function PanelSidebar() {
             P
           </div>
           <div>
-            <div className="text-white font-bold text-sm leading-none">PlacementAI</div>
+            <div className="text-white font-bold text-sm leading-none">PlacePilot AI</div>
             <div className="text-white/35 text-[10px] mt-0.5">Panel Portal</div>
           </div>
         </div>

@@ -3,7 +3,7 @@ import "./globals.css";
 import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
-  title: "PlacementAI — AI-Powered Campus Placement Agent",
+  title: "PlacePilot AI — AI-Powered Campus Placement Agent",
   description: "Intelligent campus placement coordination powered by AI agents. JD analysis, candidate matching, interview scheduling, and real-time analytics.",
   keywords: ["campus placement", "AI", "interview scheduling", "placement agent"],
   authors: [{ name: "Placement Cell AI Team" }],
