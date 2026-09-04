@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Bell, Send, RefreshCw, Clock, CheckCircle, AlertTriangle, Inbox, Archive, ArchiveRestore, ChevronDown, ChevronUp } from "lucide-react";
+import { Bell, Send, RefreshCw, Clock, CheckCircle, AlertTriangle, Inbox, Archive, ArchiveRestore, ChevronDown, ChevronUp, Mail, Smartphone, MessageCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import { notificationsAPI, studentsAPI } from "@/lib/api";
@@ -22,11 +23,13 @@ interface NotificationItem {
   extra_data?: Record<string, unknown>;
 }
 
-const CHANNEL_ICON: Record<string, string> = {
-  email: "📧",
-  sms: "📱",
-  whatsapp: "💬",
-  offline: "📥",
+/* These distinguish the channel at a glance, which is real information, so
+   they stay -- as icons rather than emoji. */
+const CHANNEL_ICON: Record<string, LucideIcon> = {
+  email:    Mail,
+  sms:      Smartphone,
+  whatsapp: MessageCircle,
+  offline:  Inbox,
 };
 
 // "queued"/"pending"/"offline_queued" are all the same thing to a TPO reading
@@ -123,7 +126,7 @@ export default function NotificationsPage() {
         data: { subject, body: message },
         channels: [channel],
       });
-      toast.success(`✉️ Notification queued for ${studentIds.length} students`);
+      toast.success(`Notification queued for ${studentIds.length} students`);
       setComposeOpen(false);
       setSubject("");
       setMessage("");
@@ -302,7 +305,17 @@ export default function NotificationsPage() {
                     transition={{ delay: Math.min(i, 20) * 0.03 }}
                     className="glass-card flex items-start gap-4"
                   >
-                    <span className="text-2xl flex-shrink-0">{CHANNEL_ICON[n.channel] ?? "📌"}</span>
+                    {(() => {
+                      const Icon = CHANNEL_ICON[n.channel] ?? Bell;
+                      return (
+                        <span
+                          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                          style={{ background: "var(--wash-2)", color: "var(--ash)" }}
+                        >
+                          <Icon size={16} />
+                        </span>
+                      );
+                    })()}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-white font-medium text-sm truncate">{n.subject || "(no subject)"}</span>

@@ -108,7 +108,7 @@ export default function StudentDashboard() {
       // Re-fetch full profile so resume_url updates in UI
       const meRes = await studentsAPI.getMe();
       setProfile(meRes.data);
-      toast.success("✅ Resume uploaded successfully!");
+      toast.success("Resume uploaded");
     } catch (err: unknown) {
       const detail = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
       const msg = detail ?? (err as Error)?.message ?? "Upload failed";
@@ -511,7 +511,7 @@ export default function StudentDashboard() {
                       </span>
                     </div>
                     <div className="text-white/50 text-xs">
-                      📍 {slot.venue as string ?? "Online"} &nbsp;·&nbsp; Panel: {slot.panel_name as string ?? "TBD"}
+                      {slot.venue as string ?? "Online"} &nbsp;·&nbsp; Panel: {slot.panel_name as string ?? "TBD"}
                     </div>
                   </div>
                 ))}

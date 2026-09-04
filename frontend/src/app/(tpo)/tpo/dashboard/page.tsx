@@ -44,9 +44,9 @@ const STATUS_LABEL: Record<string, string> = {
   jd_analyzed:         "JD Analyzed",
   eligibility_checked: "Eligibility Done",
   matched:             "Candidates Ranked",
-  shortlist_pending:   "⏸ Awaiting Approval",
+  shortlist_pending:   "Awaiting approval",
   shortlist_approved:  "Shortlist Approved",
-  schedule_pending:    "⏸ Schedule Review",
+  schedule_pending:    "Schedule review",
   scheduled:           "Scheduled",
   ongoing:             "Ongoing",
   completed:           "Completed",
@@ -183,7 +183,7 @@ export default function TPODashboard() {
       <div className="ml-64 flex-1 flex flex-col min-h-screen">
         <TopBar
           title="Placement Dashboard"
-          subtitle="Real-time AI placement operations"
+          subtitle="Live drive status, agent activity, and what needs you"
         >
           {pendingDrives.length > 0 && (
             <span
@@ -191,7 +191,7 @@ export default function TPODashboard() {
               style={{ background: "var(--gold-lt)", border: "1px solid var(--gold-ln)", color: "var(--gold-d)" }}
             >
               <AgentOrb size={18} waiting />
-              Hey TPO, {pendingDrives.length} drive{pendingDrives.length > 1 ? "s are" : " is"} waiting for your approval!
+              {pendingDrives.length} drive{pendingDrives.length > 1 ? "s" : ""} waiting for your approval
             </span>
           )}
         </TopBar>

@@ -139,7 +139,7 @@ export default function PanelSchedulePage() {
         prev.map((s) => s.id === slotId ? { ...s, result, status: "completed" } : s)
       );
       const label = RESULT_OPTS.find(r => r.value === result)?.label ?? result;
-      toast.success(`✅ Marked as ${label}`);
+      toast.success(`Marked as ${label}`);
       setActiveSlot(null);
     } catch {
       toast.error("Failed to update result");
@@ -285,7 +285,7 @@ export default function PanelSchedulePage() {
                               <Clock size={10} />
                               {formatTime(slot.slot_start)} – {formatTime(slot.slot_end)}
                             </span>
-                            {slot.room && <span>📍 {slot.room}</span>}
+                            {slot.room && <span>{slot.room}</span>}
                             <span className="badge badge-gray text-[9px]">{slot.round_type}</span>
                           </div>
                         </div>
@@ -299,8 +299,8 @@ export default function PanelSchedulePage() {
                               slot.result === "selected" ? "badge-green" :
                               slot.result === "rejected" ? "badge-rose" : "badge-amber"
                             }`}>
-                              {slot.result === "selected" ? "✓ Selected" :
-                               slot.result === "rejected" ? "✗ Rejected" : "⏸ On Hold"}
+                              {slot.result === "selected" ? "Selected" :
+                               slot.result === "rejected" ? "Rejected" : "On hold"}
                             </span>
                           </div>
                         ) : (
@@ -374,7 +374,7 @@ export default function PanelSchedulePage() {
               className="glass-card border border-emerald-500/20 text-center py-8"
             >
               <CheckCircle size={36} className="text-emerald-400 mx-auto mb-3" />
-              <h3 className="text-white font-semibold">All Interviews Complete!</h3>
+              <h3 className="text-white font-semibold">All interviews complete</h3>
               <p className="text-white/40 text-sm mt-1">
                 {stats.selected} selected · {stats.total - stats.selected} not selected
               </p>

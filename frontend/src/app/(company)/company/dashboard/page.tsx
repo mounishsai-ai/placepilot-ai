@@ -72,7 +72,7 @@ export default function CompanyDashboard() {
       reader.onload = (e) => setJdText(e.target?.result as string);
       reader.readAsText(file);
     } else {
-      toast("📄 For PDF/DOCX, paste the text directly. File name captured.", { icon: "ℹ️" });
+      toast("For PDF or DOCX, paste the text directly — the file name has been captured.");
       setDriveTitle(file.name.replace(/\.[^.]+$/, ""));
     }
   };
@@ -88,7 +88,7 @@ export default function CompanyDashboard() {
       const id = createRes.data.id;
       setDriveId(id);
 
-      toast.loading("🧠 Gemini is analyzing the JD, checking eligibility, and ranking candidates…", { id: "jd-analyze" });
+      toast.loading("Reading the JD, checking eligibility, and ranking candidates…", { id: "jd-analyze" });
       await drivesAPI.runPipeline(id);
 
       // The full pipeline (JD parse -> eligibility -> matching) runs as one job
@@ -102,7 +102,7 @@ export default function CompanyDashboard() {
         const driveRes = await drivesAPI.get(id);
         if (driveRes.data.jd_parsed) {
           setParsedJD(driveRes.data.jd_parsed as Record<string, unknown>);
-          toast.success("✅ JD analyzed, eligibility checked, candidates ranked!", { id: "jd-analyze" });
+          toast.success("JD read, eligibility checked, candidates ranked.", { id: "jd-analyze" });
           setStep("preview");
           completed = true;
           break;
@@ -478,13 +478,13 @@ export default function CompanyDashboard() {
               </p>
               <div className="mt-8 space-y-2 max-w-xs mx-auto text-left">
                 {[
-                  "✅ JD analyzed — role & requirements extracted",
+                  "JD read — role and requirements extracted",
                   pipelineStats.eligible !== undefined
-                    ? `✅ Eligibility check — ${pipelineStats.eligible}/${pipelineStats.total ?? "?"} students qualified`
-                    : "✅ Eligibility check complete",
+                    ? `Eligibility checked — ${pipelineStats.eligible}/${pipelineStats.total ?? "?"} students qualified`
+                    : "Eligibility checked",
                   pipelineStats.ranked !== undefined
-                    ? `✅ Vector matching — ${pipelineStats.ranked} candidates ranked by AI fit score`
-                    : "✅ Vector matching complete",
+                    ? `Ranked — ${pipelineStats.ranked} candidates scored against the JD`
+                    : "Candidates ranked",
                 ].map((msg, i) => (
                   <motion.div
                     key={i}

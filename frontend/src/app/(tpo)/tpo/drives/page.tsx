@@ -384,7 +384,7 @@ function ShortlistModal({
         shortlisted_student_ids: Array.from(selected),
         notes: "Approved via TPO dashboard",
       });
-      toast.success(`✅ Shortlist approved — ${selected.size} candidates`);
+      toast.success(`Shortlist approved — ${selected.size} candidates`);
       onApproved();
     } catch {
       toast.error("Failed to approve shortlist");
@@ -607,7 +607,7 @@ function ScheduleRoundModal({
       // Step 2: start the scheduling agent (propose \u2192 validate \u2192 re-plan \u2192 commit)
       await scheduleAPI.runAgent(roundId);
 
-      toast.success("\u2705 Scheduling agent started \u2014 watch it in the agent dock.");
+      toast.success("Scheduling agent started \u2014 watch it in the agent dock.");
       onScheduled();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -627,7 +627,7 @@ function ScheduleRoundModal({
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-white font-bold text-lg">&#x1F4C5; Create Interview Round</h2>
+            <h2 className="text-white font-bold text-lg">Create interview round</h2>
             <p className="text-white/40 text-sm mt-0.5">Set the date window — the scheduling agent proposes slots, then checks them</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
@@ -694,7 +694,7 @@ function ScheduleRoundModal({
                       : "bg-white/[0.03] border-white/[0.08] text-white/40 hover:text-white/60"
                   }`}
                 >
-                  {m === "offline" ? "\uD83C\uDFEB Offline" : "\uD83D\uDCBB Online"}
+                  {m === "offline" ? "Offline" : "Online"}
                 </button>
               ))}
             </div>
@@ -820,20 +820,23 @@ function DriveCard({
     );
   const events = [...fetchedEvents, ...newLiveEvents];
 
-  const EVENT_ICON: Record<string, string> = {
-    pipeline_started:    "🚀",
-    jd_analyzed:         "🧠",
-    eligibility_checked: "✅",
-    matching_complete:   "🔍",
-    shortlist_pending:   "⏸️",
-    shortlist_approved:  "👍",
-    shortlist_rejected:  "👎",
-    schedule_created:    "📅",
-    schedule_pending:    "⏸️",
-    schedule_approved:   "✅",
-    schedule_rejected:   "↩️",
-    notifications_queued: "📨",
-    pipeline_error:      "❌",
+  /* An activity log reads better with one semantic colour than with a dozen
+     different emoji -- what a reader needs at a glance is "done / waiting /
+     failed", and the event name right beside it already says which step. */
+  const EVENT_TONE: Record<string, string> = {
+    pipeline_started:     "var(--blue)",
+    jd_analyzed:          "var(--blue)",
+    eligibility_checked:  "var(--jade)",
+    matching_complete:    "var(--jade)",
+    shortlist_pending:    "var(--gold)",
+    shortlist_approved:   "var(--jade-d)",
+    shortlist_rejected:   "var(--rose)",
+    schedule_created:     "var(--blue)",
+    schedule_pending:     "var(--gold)",
+    schedule_approved:    "var(--jade-d)",
+    schedule_rejected:    "var(--rose)",
+    notifications_queued: "var(--blue)",
+    pipeline_error:       "var(--rose)",
   };
 
   return (
@@ -992,9 +995,10 @@ function DriveCard({
                       key={i}
                       className="flex items-start gap-3 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]"
                     >
-                      <span className="text-base flex-shrink-0">
-                        {EVENT_ICON[evt.event_type] ?? "📌"}
-                      </span>
+                      <span
+                        className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-[5px]"
+                        style={{ background: EVENT_TONE[evt.event_type] ?? "var(--ghost)" }}
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="text-white/70 text-xs font-medium capitalize">
                           {evt.event_type.replace(/_/g, " ")}
@@ -1080,7 +1084,7 @@ export default function DrivesPage() {
       // the backend sets this status synchronously before the (slow) AI calls even start.
       setDrives((prev) => prev.map((d) => (d.id === id ? { ...d, status: "jd_analyzed" } : d)));
       setPollingActive(true);
-      toast.success("🚀 Pipeline started! Watch agent events below...", { duration: 4000 });
+      toast.success("Pipeline started — agent events appear below.", { duration: 4000 });
       setTimeout(fetchDrives, 2000);
     } catch (err: unknown) {
       const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
@@ -1139,7 +1143,7 @@ export default function DrivesPage() {
   const handleConfirmSchedule = async (id: string) => {
     try {
       await drivesAPI.approveSchedule(id, { approved: true });
-      toast.success("✅ Schedule confirmed — students will be notified");
+      toast.success("Schedule confirmed — students will be notified");
       fetchDrives();
     } catch (err: unknown) {
       const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail;
