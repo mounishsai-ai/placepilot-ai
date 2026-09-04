@@ -1,0 +1,74 @@
+# Whole-stack local run: Postgres + FastAPI + Next.js.
+#
+#   docker compose up --build
+#   docker compose exec api python -m seed.seed_db     # once, to load demo data
+#
+# Then open http://localhost:3000
+#
+# The frontend is reached by a browser on the host, so it is built against
+# http://localhost:8000 -- NOT http://api:8000. That hostname only resolves
+# inside the compose network, and these values are inlined into the bundle at
+# build time by Next.js, so a container-internal URL would ship a frontend that
+# cannot reach the API from anyone's browser.
+#
+# Runs with no API keys: embeddings fall back to TF-IDF and the LLM features
+# degrade rather than crash. Set GEMINI_API_KEY in backend/.env for the full path.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: placement_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:password@db:5432/placement_db
+      SYNC_DATABASE_URL: postgresql://postgres:password@db:5432/placement_db
+      FRONTEND_URL: http://localhost:3000
+      UPLOAD_DIR: /app/uploads
+      APP_ENV: development
+    env_file:
+      # Optional -- holds GEMINI_API_KEY / Vertex settings. Compose fails if the
+      # file is missing, so copy backend/.env.example to backend/.env first.
+      - backend/.env
+    volumes:
+      # Résumé uploads and the Chroma embedding store are the two pieces of
+      # local state worth surviving a container rebuild.
+      - ./backend/uploads:/app/uploads
+      - ./backend/chroma_db:/app/chroma_db
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_WS_URL: ws://localhost:8000
+    restart: unless-stopped
+    ports:
+      # The image listens on 8080; 3000 on the host is one of the origins the
+      # backend's CORS list already allows.
+      - "3000:8080"
+    depends_on:
+      - api
+
+volumes:
+  pg_data:
