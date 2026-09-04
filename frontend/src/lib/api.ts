@@ -69,9 +69,6 @@ export const drivesAPI = {
 export const agentAPI = {
   start: (driveId: string) => api.post(`/api/drives/${driveId}/run-agent`),
   listRuns: (driveId: string) => api.get(`/api/drives/${driveId}/agent-runs`),
-  /** Runs in flight or waiting on a human, across every drive — powers the dock.
-      Returns no trace: paused-first ordering is decided server-side. */
-  live: () => api.get("/api/drives/agent-runs/live"),
   getRun: (runId: string) => api.get(`/api/drives/agent-runs/${runId}`),
   answer: (runId: string, answer: string) =>
     api.post(`/api/drives/agent-runs/${runId}/answer`, { answer }),
@@ -145,20 +142,6 @@ export const scheduleAPI = {
   /** TPO side -- every panel member's session notes. */
   getAllSessionNotes: () => api.get("/api/schedule/session-notes/all"),
 
-  /** Starts the two-agent negotiation (TPO agent vs the company's own agent)
-      for a round — discussion only, never writes a slot itself. */
-  negotiate: (roundId: string) => api.post(`/api/schedule/rounds/${roundId}/negotiate`),
-  /** Latest negotiation run for a round, full trace — both portals poll this. */
-  getNegotiation: (roundId: string) => api.get(`/api/schedule/rounds/${roundId}/negotiation`),
-  /** The one action a human takes: write the negotiated proposal as real slots. */
-  commitNegotiation: (runId: string) => api.post(`/api/schedule/negotiations/${runId}/commit`),
-
-  /** Dispatches Onyx, the supervisor agent — its tools start/read the same
-      negotiation above rather than touching the schedule directly, then it
-      reports to the TPO. Answer its report via agentAPI.answer(runId, ...). */
-  askOnyx: (roundId: string) => api.post(`/api/schedule/rounds/${roundId}/ask-onyx`),
-  /** Latest Onyx run for a round, full trace — same shape as getNegotiation. */
-  getOnyx: (roundId: string) => api.get(`/api/schedule/rounds/${roundId}/onyx`),
 };
 
 // ─── Onyx sidebar ─────────────────────────────────────────────────────────
