@@ -140,10 +140,15 @@ negotiation, reflection loop, self-proposed eligibility rules.
 - WebSocket (`/ws/*`): requires `?token=<jwt>`, checked before `accept()`.
 - `_render_template` (notifications) uses `.format_map(defaultdict(lambda:"-"))`
   — don't revert to `.format(**data)`, it raises `KeyError` on missing fields.
-- `UPLOAD_DIR` on the live backend was a Windows path baked into the Linux
-  container until 2026-08-27 (fixed to `/tmp/uploads` via `--update-env-vars`
-  on that deploy) — if a future full redeploy doesn't carry env vars forward,
-  re-check this didn't regress.
+- **Never pass a `/`-leading value to `gcloud` from Git Bash.** MSYS rewrites
+  it to a Windows path *before gcloud sees it*, silently. This is why
+  `UPLOAD_DIR` sat at `C:/Users/mouni/AppData/Local/Temp/uploads` on the live
+  Linux container for a week: the 2026-08-27 "fix" ran
+  `--update-env-vars UPLOAD_DIR=/tmp/uploads` from Git Bash, which mangled it
+  on the way out and reported success. Genuinely fixed 2026-09-04 by running
+  the same command from PowerShell. Use PowerShell (or `MSYS_NO_PATHCONV=1`)
+  for any gcloud flag whose value starts with `/`, and always read the value
+  back off the serving revision afterwards — the deploy exits 0 either way.
 - Embeddings: `gemini-embedding-001` via direct `httpx` REST call, not
   langchain (`langchain-google-genai` hangs 60s→504 on every model). TF-IDF
   is kept as a real fallback, not the only path.
