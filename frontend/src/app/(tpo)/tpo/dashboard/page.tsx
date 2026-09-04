@@ -204,7 +204,6 @@ export default function TPODashboard() {
               value={loading ? "—" : String((kpis as Record<string,unknown>)?.total_drives ?? 0)}
               icon={<Briefcase size={20} />}
               accentColor="blue"
-              trend={5}
               delay={0}
             />
             <MetricCard
@@ -218,7 +217,6 @@ export default function TPODashboard() {
               title="Students Placed"
               value={loading ? "—" : String((kpis as Record<string,unknown>)?.placed_students ?? 0)}
               icon={<Award size={20} />}
-              trend={12}
               subtitle={`${(kpis as Record<string,unknown>)?.placement_rate_pct ?? 0}% placement rate`}
               delay={0.16}
             />
@@ -227,7 +225,6 @@ export default function TPODashboard() {
               value={loading ? "—" : `${(kpis as Record<string,unknown>)?.avg_package_lpa ?? 0} LPA`}
               icon={<TrendingUp size={20} />}
               accentColor="purple"
-              trend={8}
               delay={0.24}
             />
           </div>

@@ -321,14 +321,17 @@ export default function CompanyDashboard() {
               {/* How it works */}
               <div className="glass-card border border-blue-500/10">
                 <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-4">
-                  How the AI Pipeline Works
+                  What happens after you submit
                 </h3>
+                {/* These are the tools the agent can call — not fixed stages. The
+                    model chooses which to call and in what order for each drive,
+                    and skips work another run already did. */}
                 <div className="grid grid-cols-4 gap-4">
                   {[
-                    { icon: Zap,          label: "JD Analysis",    desc: "Gemini extracts role, skills, eligibility rules" },
-                    { icon: Users,        label: "Eligibility",    desc: "Rule engine filters 200+ students in milliseconds" },
-                    { icon: Target,       label: "AI Matching",    desc: "Vector search ranks candidates by fit score" },
-                    { icon: CheckCircle,  label: "TPO Review",     desc: "Human-in-the-loop approval before invites" },
+                    { icon: Zap,          label: "Read the JD",      desc: "Extracts the role, skills and eligibility rules" },
+                    { icon: Users,        label: "Check eligibility", desc: "Applies those rules to every student on record" },
+                    { icon: Target,       label: "Rank candidates",  desc: "Compares profiles to the JD by meaning, not keywords" },
+                    { icon: CheckCircle,  label: "Ask the TPO",      desc: "Stops and hands the decision to a person" },
                   ].map((item) => (
                     <div key={item.label} className="text-center">
                       <div className="w-10 h-10 rounded-xl bg-white/[0.04] flex items-center justify-center mx-auto mb-2">
@@ -518,11 +521,14 @@ export default function CompanyDashboard() {
                 The AI pipeline has been launched. The TPO will receive a ranked shortlist
                 shortly and will send interview invitations after approval.
               </p>
+              {/* The real counts the pipeline reported, carried over from the
+                  step before — never a placeholder. A number the run didn't
+                  report shows as "—" rather than inventing one. */}
               <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto mb-8">
                 {[
-                  { label: "Students Screened", value: "201" },
-                  { label: "Eligible",          value: "37"  },
-                  { label: "AI Shortlisted",    value: "20"  },
+                  { label: "Students screened", value: pipelineStats.total    !== undefined ? String(pipelineStats.total)    : "—" },
+                  { label: "Eligible",          value: pipelineStats.eligible !== undefined ? String(pipelineStats.eligible) : "—" },
+                  { label: "Ranked",            value: pipelineStats.ranked   !== undefined ? String(pipelineStats.ranked)   : "—" },
                 ].map((stat) => (
                   <div key={stat.label} className="bg-white/[0.04] rounded-xl p-3">
                     <div className="text-emerald-400 font-bold text-xl">{stat.value}</div>

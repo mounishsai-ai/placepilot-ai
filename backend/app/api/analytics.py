@@ -1,5 +1,6 @@
 """
-Analytics API — dashboard, skill-gap, readiness, and placement trend data.
+Analytics API — dashboard KPIs, skill-gap, readiness, exceptions, audit trail,
+and the natural-language Analyst endpoint.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
