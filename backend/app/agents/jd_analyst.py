@@ -201,3 +201,39 @@ Provide a JSON response with:
             "verdict": "good match",
             "one_liner": f"Matched with {score:.0%} similarity score.",
         }
+
+
+# ─── Is this actually a job description? ─────────────────────────────────────
+
+def jd_is_usable(parsed: dict | None) -> tuple[bool, str]:
+    """Whether a parsed JD carries enough to screen anyone against.
+
+    The parser itself is honest about junk input: given "abc" or "how are you"
+    it returns nulls and empty lists rather than inventing a role. The danger is
+    what the pipeline did next. With no skills to match on and no criteria to
+    filter by, check_eligibility passes everyone and rank_candidates orders them
+    by embedding noise — scores landed within 0.003 of each other, with a 5.88
+    CGPA above a 9.92. The run still reached shortlist_pending and asked a TPO
+    to approve 20 candidates chosen against nothing, each with a fluent
+    justification. A confident wrong answer is worse than a refusal, so the
+    pipeline stops here instead.
+
+    Role or skills is the bar: a real posting has at least one, and neither
+    survives text that was never a job description.
+
+    Returns (usable, reason) — reason is empty when usable.
+    """
+    if not parsed:
+        return False, "The job description could not be read at all."
+
+    role = (parsed.get("role") or "").strip() if isinstance(parsed.get("role"), str) else ""
+    skills = parsed.get("required_skills") or []
+    if role or skills:
+        return True, ""
+
+    return False, (
+        "This does not read as a job description — no role and no required "
+        "skills could be found in it. Nothing was shortlisted, because there "
+        "is nothing to match candidates against. Paste the full JD and run it "
+        "again."
+    )

@@ -9,7 +9,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
 from loguru import logger
 
-from app.agents.jd_analyst import analyze_jd
+from app.agents.jd_analyst import analyze_jd, jd_is_usable
 from app.agents.eligibility_agent import run_bulk_eligibility
 from app.agents.matcher_agent import (
     index_students_for_drive,
@@ -55,6 +55,15 @@ async def node_analyze_jd(state: PlacementState) -> dict:
     logger.info(f"[{state['drive_id']}] JD Analyst started")
     try:
         jd_parsed = await analyze_jd(state["jd_text"])
+
+        # Stop here rather than screening 200 students against nothing. See
+        # jd_is_usable() for why an empty parse must not become a shortlist.
+        usable, reason = jd_is_usable(jd_parsed)
+        if not usable:
+            logger.warning(f"[{state['drive_id']}] unusable JD — halting pipeline")
+            await _emit(state, "pipeline_error", "jd_analyst", {"reason": reason})
+            return {"jd_parsed": jd_parsed, "error": reason, "current_step": "error"}
+
         event = await _emit(state, "jd_analyzed", "jd_analyst", {
             "role": jd_parsed.get("role"), "package": jd_parsed.get("package_lpa"),
         })
@@ -194,6 +203,11 @@ async def node_send_notifications(state: PlacementState) -> dict:
 
 # ─── Routing Logic ────────────────────────────────────────────────────────────
 
+def route_after_jd(state: PlacementState) -> str:
+    """An unusable JD ends the run instead of screening anyone against it."""
+    return "end" if state.get("error") else "check_eligibility"
+
+
 def route_after_shortlist(state: PlacementState) -> str:
     if state.get("tpo_shortlist_approved") is True:
         return "schedule_interviews"
@@ -225,7 +239,11 @@ def build_placement_graph():
     graph.set_entry_point("analyze_jd")
 
     # Edges
-    graph.add_edge("analyze_jd", "check_eligibility")
+    graph.add_conditional_edges(
+        "analyze_jd",
+        route_after_jd,
+        {"check_eligibility": "check_eligibility", "end": END},
+    )
     graph.add_edge("check_eligibility", "match_candidates")
     graph.add_conditional_edges(
         "match_candidates",

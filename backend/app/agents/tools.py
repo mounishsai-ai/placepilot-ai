@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import (
     PlacementDrive, Student, EligibilityRule, EligibilityResult, MatchScore,
 )
-from app.agents.jd_analyst import analyze_jd
+from app.agents.jd_analyst import analyze_jd, jd_is_usable
 from app.agents.eligibility_agent import run_bulk_eligibility
 from app.agents.matcher_agent import (
     index_students_for_drive, match_students_to_jd, generate_all_explanations,
@@ -240,6 +240,13 @@ async def _exec_parse_jd(ctx: ToolContext, args: dict) -> dict:
     ctx.drive.package_lpa = parsed.get("package_lpa")
     await ctx.db.commit()
 
+    # Refused in the tool, not left to the prompt: a model that decided to
+    # press on anyway would produce exactly the confident, empty shortlist this
+    # guards against. See jd_is_usable().
+    usable, reason = jd_is_usable(parsed)
+    if not usable:
+        return {"error": reason, "usable_jd": False}
+
     return {
         "role": parsed.get("role"),
         "package_lpa": parsed.get("package_lpa"),
@@ -341,6 +348,14 @@ async def _exec_rank_candidates(ctx: ToolContext, args: dict) -> dict:
             eligible_ids.append(r.student_id)
         if not eligible_ids or not ctx.jd_parsed:
             return {"error": "call check_eligibility first — no eligible students to rank"}
+
+        # get_drive_context reports a stored jd_parsed, so the model can skip
+        # parse_jd entirely on a re-run and never hit the gate there. Check the
+        # reloaded JD too, or a drive whose junk parse was saved earlier would
+        # still reach a shortlist.
+        usable, reason = jd_is_usable(ctx.jd_parsed)
+        if not usable:
+            return {"error": reason, "usable_jd": False}
         if not ctx.all_students:
             ctx.all_students = await _load_students(ctx.db)
         students_by_id = {s["id"]: s for s in ctx.all_students}

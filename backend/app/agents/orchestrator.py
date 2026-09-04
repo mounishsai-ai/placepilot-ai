@@ -58,6 +58,11 @@ Rules:
   of these.
 - parse_jd must run before check_eligibility.
 - check_eligibility must run before rank_candidates.
+- If parse_jd or rank_candidates comes back with usable_jd false, the text on
+  this drive is not a job description. Stop there: do not call any further
+  tool, and call ask_human repeating the reason and asking for a real JD.
+  Never rank or shortlist anyone against a JD that could not be read — a
+  shortlist built on nothing is worse than no shortlist.
 - Once you have ranked candidates, call ask_human with a clear recommendation
   and question — never finalize a shortlist without asking.
 - Before each tool call, write one short sentence explaining why you're calling it.
