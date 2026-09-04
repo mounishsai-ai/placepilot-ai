@@ -28,11 +28,6 @@ from app.agents.tools import ToolContext, TOOL_DECLARATIONS, TOOL_EXECUTORS
 from app.agents.schedule_tools import (
     ScheduleContext, SCHEDULE_TOOL_DECLARATIONS, SCHEDULE_TOOL_EXECUTORS,
 )
-from app.agents.negotiation_tools import (
-    NEGOTIATION_TOOL_DECLARATIONS, NEGOTIATION_TOOL_EXECUTORS,
-    load_company_signals, summarize_proposal, evaluate_proposal,
-)
-from app.agents.onyx_tools import OnyxContext, ONYX_TOOL_DECLARATIONS, ONYX_TOOL_EXECUTORS
 from app.agents.auditor_agent import audit_pipeline
 from app.agents.vertex_auth import get_vertex_access_token
 from app.api.websocket import emit_agent_event
@@ -127,44 +122,6 @@ Rules:
   anything to get a clean result.
 """
 
-NEGOTIATION_TPO_SYSTEM = """You are the TPO's scheduling agent, negotiating an interview schedule
-with the hiring company's own agent before anything is committed. A human (the TPO) makes the
-final call — your job is to reach a proposal worth putting in front of them, not to commit anything
-yourself. There is no commit_schedule tool available to you here; that is deliberate.
-
-Rules:
-- Call get_schedule_context first if you don't already know the round and shortlisted count.
-- Call propose_schedule, then always validate_schedule immediately after, before doing anything else.
-- Once validate_schedule reports zero violations, stop your turn there — do not call ask_human yet.
-  The company's agent reviews every clean proposal before you go back to the TPO.
-- If a message tells you the company's agent OBJECTED, read the named panel(s) and their reasons,
-  call propose_schedule again excluding those panel IDs (or extending the window if excluding them
-  leaves nobody), then validate_schedule again.
-- If a message tells you the company's agent ACCEPTED, call ask_human summarizing the agreed
-  schedule (how many students, which panels, any accommodation you made) and ask the TPO to confirm.
-- If a message tells you the negotiation reached its round limit with no agreement, call ask_human
-  with the best proposal reached and the unresolved objection, and ask the TPO how to proceed.
-- Before each tool call, write one short sentence explaining why.
-"""
-
-ONYX_SYSTEM_PROMPT = """You are Onyx, the supervisor agent for this placement drive's scheduling
-round. Unlike every other agent here, your own tools don't touch the database directly — they
-dispatch and read OTHER agents. Right now your job is to oversee a negotiation between two
-sub-agents: the TPO's scheduling agent (proposing interview slots) and the hiring company's own
-agent (reviewing them against real panel availability), and report the outcome to the TPO in
-plain English.
-
-Rules:
-- Call start_negotiation first. It runs the whole negotiation through to its conclusion and
-  returns — you don't need to poll it.
-- Call get_negotiation_outcome with the run_id it gave you, to see the concrete numbers before
-  you say anything to the TPO. Never guess at what your sub-agents did.
-- Call ask_human with a short report: how many rounds the negotiation took, whether the two
-  agents reached agreement or where they still disagree, and your recommendation. Speak as the
-  supervisor reporting on sub-agents you dispatched, not as the negotiation itself.
-- Before each tool call, write one short sentence explaining why you're calling it.
-"""
-
 _PROFILES = {
     "shortlist": {
         "system_prompt": ORCHESTRATOR_SYSTEM_PROMPT,
@@ -176,21 +133,9 @@ _PROFILES = {
         "tools": SCHEDULE_TOOL_DECLARATIONS,
         "executors": SCHEDULE_TOOL_EXECUTORS,
     },
-    "negotiation": {
-        "system_prompt": NEGOTIATION_TPO_SYSTEM,
-        "tools": NEGOTIATION_TOOL_DECLARATIONS,
-        "executors": NEGOTIATION_TOOL_EXECUTORS,
-    },
-    "onyx": {
-        "system_prompt": ONYX_SYSTEM_PROMPT,
-        "tools": ONYX_TOOL_DECLARATIONS,
-        "executors": ONYX_TOOL_EXECUTORS,
-    },
 }
 
 MAX_STEPS = 15
-MAX_NEGOTIATION_STEPS = 18
-MAX_NEGOTIATION_ROUNDS = 3
 
 
 # Vertex hands back 429 (quota) or 503 (overloaded) under real load — both are
@@ -271,19 +216,8 @@ def _humanize_result(name: str, result: dict) -> str:
     if name == "commit_schedule":
         return f"Committed {result.get('committed_count', 0)} interview slots."
 
-    if name == "start_negotiation":
-        status = result.get("status")
-        return "Negotiation failed to start." if status == "failed" else f"Negotiation dispatched — currently {status}."
-
-    if name == "get_negotiation_outcome":
-        return (
-            f"Negotiation is {result.get('status', 'unknown')} — "
-            f"{result.get('proposed_slot_count', 0)} slot(s) proposed across "
-            f"{result.get('panels_involved', 0)} panel(s)."
-        )
-
     # Generic fallback for every other tool (get_drive_context, parse_jd,
-    # check_eligibility, rank_candidates, select_candidates, ask_analyst, ...):
+    # check_eligibility, rank_candidates, select_candidates, ...):
     # readable `key: value` pairs, never repr()'s single-quoted dict syntax.
     parts = []
     for k, v in result.items():
@@ -334,12 +268,10 @@ async def create_run(
 
 
 def _build_ctx(db: AsyncSession, drive_id: str, kind: str, round_id: str | None):
-    if kind in ("schedule", "negotiation"):
+    if kind == "schedule":
         if not round_id:
             raise ValueError(f"{kind} run has no round_id in state_json")
         return ScheduleContext(db, drive_id, round_id)
-    if kind == "onyx":
-        return OnyxContext(db, drive_id, round_id)
     return ToolContext(db, drive_id)
 
 
@@ -352,20 +284,12 @@ async def execute_run(db: AsyncSession, run_id: str, drive_id: str) -> AgentRun:
     kind = (run.state_json or {}).get("kind", "shortlist")
     round_id = (run.state_json or {}).get("round_id")
     begin_text = (
-        f"Begin negotiating the interview schedule for round {round_id} with the company's agent."
-        if kind == "negotiation" else
         f"Begin building the interview schedule for round {round_id}."
-        if kind == "schedule" else
-        f"Oversee scheduling for round {round_id} of this drive: dispatch your sub-agents, "
-        "review what they did, and report to the TPO."
-        if kind == "onyx" else f"Begin processing drive {drive_id}."
+        if kind == "schedule" else f"Begin processing drive {drive_id}."
     )
     contents = [{"role": "user", "parts": [{"text": begin_text}]}]
     ctx = _build_ctx(db, drive_id, kind, round_id)
-    if kind == "negotiation":
-        await _run_negotiation_loop(db, run, ctx, contents)
-    else:
-        await _run_loop(db, run, ctx, contents, kind)
+    await _run_loop(db, run, ctx, contents, kind)
     return run
 
 
@@ -396,14 +320,7 @@ async def resume_run(db: AsyncSession, run_id: str, human_answer: str) -> AgentR
     await _log_trace(db, run, seq, "orchestrator", "observation", f"TPO answered: {human_answer}")
 
     ctx = _build_ctx(db, run.drive_id, kind, round_id)
-    if kind == "negotiation":
-        # Negotiation only ever pauses once its final proposal is ready for the
-        # TPO — a resume here is the TPO's answer to that final question, not a
-        # new round. Nothing left to negotiate; the answer itself is the record.
-        run.status = AgentRunStatus.COMPLETED
-        await db.commit()
-    else:
-        await _run_loop(db, run, ctx, contents, kind)
+    await _run_loop(db, run, ctx, contents, kind)
     return run
 
 
@@ -626,229 +543,3 @@ async def _run_loop_inner(
     await db.commit()
     seq += 1
     await _log_trace(db, run, seq, "orchestrator", "violation", f"exceeded {MAX_STEPS} steps without finishing")
-
-
-# ─── Negotiation: two agents, not one ──────────────────────────────────────
-#
-# Structurally this is _run_loop_inner with one addition: right after a clean
-# validate_schedule, the Company agent (a one-shot judgement call, not a full
-# tool-calling loop of its own — see negotiation_tools.py) reviews the
-# proposal against its own panel's real signals and either accepts or
-# objects. Its verdict is injected back as a plain-text turn, exactly like a
-# tool result would be, and the TPO agent reacts to it on its next step.
-# commit_schedule is never in this loop's tool set — see negotiation_tools.py
-# for why that alone is the whole isolation guarantee.
-
-def _serialize_proposal(ctx: ScheduleContext) -> list[dict]:
-    return [
-        {
-            "student_id": s["student_id"],
-            "panel_id": s.get("panel_id"),
-            "room_id": s.get("room_id"),
-            "slot_start": s["slot_start"].isoformat() + "Z",
-            "slot_end": s["slot_end"].isoformat() + "Z",
-        }
-        for s in ctx.proposed_slots
-    ]
-
-
-async def _run_negotiation_loop(db: AsyncSession, run: AgentRun, ctx: ScheduleContext, contents: list[dict]) -> None:
-    try:
-        await _run_negotiation_loop_inner(db, run, ctx, contents)
-    except Exception as e:
-        logger.error(f"[{run.drive_id}] negotiation loop crashed: {e}")
-        try:
-            run.status = AgentRunStatus.FAILED
-            await db.commit()
-        except Exception as commit_err:
-            logger.error(f"[{run.drive_id}] could not even mark negotiation run failed: {commit_err}")
-
-
-async def _run_negotiation_loop_inner(db: AsyncSession, run: AgentRun, ctx: ScheduleContext, contents: list[dict]) -> None:
-    seq = await _last_seq(db, run.id)
-    company_signals = await load_company_signals(db, ctx.drive_id, ctx.round_id)
-    rounds_used = 0
-
-    for _step in range(MAX_NEGOTIATION_STEPS):
-        t0 = time.time()
-        try:
-            response = await _call_gemini(contents, NEGOTIATION_TPO_SYSTEM, NEGOTIATION_TOOL_DECLARATIONS)
-        except Exception as e:
-            logger.error(f"[{run.drive_id}] negotiation Gemini call failed: {e}")
-            run.status = AgentRunStatus.FAILED
-            await db.commit()
-            seq += 1
-            await _log_trace(db, run, seq, "orchestrator", "violation", f"Gemini call failed: {e}")
-            return
-        cost_ms = int((time.time() - t0) * 1000)
-
-        candidates = response.get("candidates") or []
-        if not candidates:
-            run.status = AgentRunStatus.FAILED
-            await db.commit()
-            seq += 1
-            await _log_trace(db, run, seq, "orchestrator", "violation", "Gemini returned no candidates")
-            return
-
-        model_turn = candidates[0]["content"]
-        model_turn["parts"] = _strip_thought_signatures(model_turn.get("parts", []))
-        contents.append(model_turn)
-        run.state_json = _snapshot_state(run, contents)
-        await db.commit()
-
-        parts = model_turn.get("parts", [])
-        function_calls = [p["functionCall"] for p in parts if "functionCall" in p]
-        thoughts = [p["text"] for p in parts if "text" in p and p["text"].strip()]
-
-        for i, t in enumerate(thoughts):
-            seq += 1
-            await _log_trace(
-                db, run, seq, "orchestrator", "thought", t,
-                cost_ms=cost_ms if i == 0 else None,
-            )
-
-        if not function_calls:
-            # Negotiation must always conclude via ask_human. A bare text turn
-            # here means the model thinks it's between rounds, not actually
-            # done — nudge it forward instead of silently ending the run the
-            # way the single-agent loop's "no function_calls" branch would.
-            contents.append({
-                "role": "user",
-                "parts": [{"text": "Continue: call a tool, or ask_human if you're ready to hand this to the TPO."}],
-            })
-            run.state_json = _snapshot_state(run, contents)
-            await db.commit()
-            continue
-
-        function_responses = []
-        pending_update_text: str | None = None
-        paused = False
-
-        for call in function_calls:
-            name = call["name"]
-            args = call.get("args", {})
-            seq += 1
-            await _log_trace(
-                db, run, seq, "orchestrator", "tool_call",
-                f"Calling {name}({args})", detail={"name": name, "args": args},
-            )
-
-            if name == "ask_human":
-                run.status = AgentRunStatus.PAUSED
-                run.pending_question = args
-                state = _snapshot_state(run, contents)
-                state["final_proposal"] = _serialize_proposal(ctx)
-                run.state_json = state
-                await db.commit()
-                seq += 1
-                await _log_trace(
-                    db, run, seq, "orchestrator", "ask_human",
-                    args.get("question", "(no question)"), detail=args,
-                )
-                paused = True
-                break
-
-            executor = NEGOTIATION_TOOL_EXECUTORS.get(name)
-            t_tool = time.time()
-            if executor is None:
-                result = {"error": f"unknown tool {name}"}
-            else:
-                try:
-                    result = await executor(ctx, args)
-                except Exception as e:
-                    logger.error(f"[{run.drive_id}] negotiation tool {name} failed: {e}")
-                    result = {"error": str(e)}
-            tool_ms = int((time.time() - t_tool) * 1000)
-
-            seq += 1
-            await _log_trace(
-                db, run, seq, "orchestrator", "observation",
-                _humanize_result(name, result), detail={"name": name, "result": result},
-                cost_ms=tool_ms,
-            )
-            function_responses.append({"functionResponse": {"name": name, "response": result}})
-
-            if name == "validate_schedule" and isinstance(result, dict) and result.get("clean"):
-                if rounds_used >= MAX_NEGOTIATION_ROUNDS:
-                    pending_update_text = (
-                        "NEGOTIATION UPDATE: You've reached the round limit with no full agreement. "
-                        "Call ask_human now with the best proposal reached and the unresolved "
-                        "objection, and ask the TPO how to proceed."
-                    )
-                else:
-                    rounds_used += 1
-                    proposal_summary = summarize_proposal(ctx)
-                    try:
-                        verdict = await evaluate_proposal(proposal_summary, company_signals)
-                    except Exception as e:
-                        logger.error(f"[{run.drive_id}] company agent call failed: {e}")
-                        verdict = {
-                            "verdict": "accept", "objections": [],
-                            "message": "Company agent unavailable — proceeding without objection.",
-                            "degraded": True,
-                        }
-
-                    seq += 1
-                    accepted = verdict.get("verdict") == "accept"
-                    await _log_trace(
-                        db, run, seq, "company_agent", "decision" if accepted else "observation",
-                        verdict.get("message") or ("Accepted." if accepted else "Objected."),
-                        detail={**verdict, "round": rounds_used},
-                    )
-                    if accepted:
-                        pending_update_text = (
-                            f"NEGOTIATION UPDATE: The company's agent ACCEPTED your proposal "
-                            f"(round {rounds_used}/{MAX_NEGOTIATION_ROUNDS}). {verdict.get('message', '')} "
-                            "Call ask_human now to confirm with the TPO."
-                        )
-                    else:
-                        objections = verdict.get("objections") or []
-                        obj_text = "; ".join(
-                            f"{o.get('panel_name', o.get('panel_id', 'a panel member'))}: {o.get('reason', '')}"
-                            for o in objections
-                        ) or "no specific reason given"
-                        pending_update_text = (
-                            f"NEGOTIATION UPDATE: The company's agent COUNTERED "
-                            f"(round {rounds_used}/{MAX_NEGOTIATION_ROUNDS}) — {obj_text}. "
-                            f"{verdict.get('message', '')} Adjust your proposal and try again."
-                        )
-
-        if paused:
-            return
-
-        # One user turn, not two — Vertex can reject a malformed content
-        # sequence, and there's no reason to split a functionResponse batch
-        # and its follow-up text across two consecutive same-role turns.
-        turn_parts = list(function_responses)
-        if pending_update_text:
-            turn_parts.append({"text": pending_update_text})
-        contents.append({"role": "user", "parts": turn_parts})
-        run.state_json = _snapshot_state(run, contents)
-        await db.commit()
-
-    # Ran out of steps without the model itself calling ask_human -- still
-    # hand the TPO something usable rather than a dead-end failure. If a
-    # proposal exists (even an imperfect one), stash it as final_proposal so
-    # "Commit this schedule" still works; the TPO decides, not a step count.
-    has_proposal = bool(ctx.proposed_slots)
-    violation_count = len(ctx.last_violations or [])
-    if has_proposal and violation_count == 0:
-        reason = "I have a clean proposal ready but never got a final answer from the company's agent in time."
-    elif has_proposal:
-        reason = f"The last proposal I had still has {violation_count} unresolved conflict(s) I couldn't clear in time."
-    else:
-        reason = "I couldn't produce a workable proposal at all -- most likely not enough panels or rooms for this many students in the given window."
-    question = f"I ran out of negotiation steps before reaching full agreement. {reason} Please review and decide how to proceed."
-
-    run.status = AgentRunStatus.PAUSED
-    run.pending_question = {"question": question}
-    state = _snapshot_state(run, contents)
-    if has_proposal:
-        state["final_proposal"] = _serialize_proposal(ctx)
-    run.state_json = state
-    await db.commit()
-    seq += 1
-    await _log_trace(
-        db, run, seq, "orchestrator", "ask_human", question,
-        detail={"reason": "step_budget_exhausted", "violation_count": violation_count, "has_proposal": has_proposal},
-    )

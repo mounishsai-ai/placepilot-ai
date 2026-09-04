@@ -86,7 +86,7 @@ The model chooses the fix itself; the recovery strategy is not coded as a branch
 
 ## Architecture
 
-`orchestrator.py` is a single Gemini function-calling loop. It is not four agents —
+`orchestrator.py` is a single Gemini function-calling loop. It is not two agents —
 it is one engine, and which agent it becomes is decided by a **profile**: a system
 prompt plus a tool list, selected by a `kind` string. Adding an agent is a dictionary
 entry, not new engine code.
@@ -97,26 +97,25 @@ entry, not new engine code.
 |---|---|---|
 | `shortlist` | `get_drive_context`, `parse_jd`, `check_eligibility`, `rank_candidates`, `select_candidates`, `ask_human` | JD → ranked, human-approved shortlist |
 | `schedule` | `get_schedule_context`, `propose_schedule`, `validate_schedule`, `commit_schedule`, `ask_human` | Conflict-free interview schedule |
-| `negotiation` | `get_schedule_context`, `propose_schedule`, `validate_schedule`, `ask_human` | Proposes on the TPO's behalf, negotiates with the company's agent |
-| `onyx` | `start_negotiation`, `get_negotiation_outcome`, `ask_human` | Supervisor — dispatches other agents, reports back |
 
-Two details in that table are deliberate:
+Both profiles run on the same engine function. The difference between them is
+entirely data — a system prompt and a list of tools — which is why adding a third
+would not touch the loop itself.
 
-- **`negotiation` has no `commit_schedule`.** That omission *is* the isolation
-  guarantee. An agent negotiating on one party's behalf structurally cannot write to
-  the schedule, regardless of what the model decides to do.
-- **`onyx`'s tools are other agents, not the database.** It dispatches a negotiation
-  and reads back what happened; it has no direct data access of its own.
+An earlier version added two more profiles, in which an agent acting for the TPO
+negotiated the schedule with a second agent acting for the company. It was
+removed: it spent 12–18 model steps and an extra judgement call arriving at the
+schedule the `schedule` agent above reaches in about four, and by design it could
+not commit anything, so nothing depended on it.
 
 ### One-shot specialists (single structured judgment)
 
 | Agent | Job |
 |---|---|
 | **Auditor** | An independent second model call that fact-checks the shortlist's *real numbers* — not the orchestrator's narration of them — immediately before a human is asked to approve. Its job is to disagree. Degrades to "clear" on failure rather than blocking the run. |
-| **Company Agent** | Represents the hiring company in a negotiation. Reviews a proposed schedule against real panel signals and accepts, or objects with a named reason. |
 | **Analyst Agent** | Plain-English question → generated SQL → **validated in Python** (single `SELECT` only, table allowlist, PII column blocklist, no `SELECT *`, forced `LIMIT`) → executed read-only → answered from the rows actually returned. TPO only. |
 | **Panel Agent** | Briefs an interviewer before a slot, structures their debrief after, and cleans up voice-dictated notes. |
-| **Onyx Sidebar** | The supervisor as free-text chat from anywhere in the TPO portal. No `ask_human` pause — the human is already in the conversation. |
+| **Onyx** | A free-text assistant reachable from anywhere in the TPO portal. It has no data access of its own — its single tool hands the question to the Analyst. No `ask_human` pause, because the human is already in the conversation. |
 
 ### Models, and why
 
@@ -259,7 +258,6 @@ backend/app/
     orchestrator.py    the single function-calling engine + agent profiles
     tools.py           shortlist tool registry
     schedule_tools.py  scheduling tools, incl. the cross-drive validator
-    negotiation_tools.py, onyx_tools.py
     auditor_agent.py, analyst_agent.py, panel_agent.py
     vertex_json.py     shared one-shot JSON helper
   api/             REST + WebSocket routes
