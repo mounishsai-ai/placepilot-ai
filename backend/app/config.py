@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     VERTEX_EMBEDDING_LOCATION: str = "us-central1"
     VERTEX_ORCHESTRATOR_MODEL: str = "gemini-2.5-flash"  # function calling verified live on this model
 
+    # Which Gemini backend to call: "vertex" (project-billed, no daily cap),
+    # "aistudio" (API key, free tier with a daily cap), or "auto" — which
+    # prefers Vertex whenever a project and credentials are both present, so
+    # this default changes nothing about how the deployed app behaves.
+    # Read by app/agents/gemini_transport.py.
+    LLM_BACKEND: str = "auto"
+
     CHROMA_PERSIST_DIR: str = "./chroma_db"
 
     SENDGRID_API_KEY: str = ""
