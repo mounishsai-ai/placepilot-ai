@@ -128,12 +128,17 @@ frontend trace-viewer changes. The agent dock (`/api/drives/agent-runs/live`)
 surfaces any RUNNING/PAUSED run across all drives the same way.
 
 ## Scope already decided — don't re-litigate
-**Built:** agentic orchestrator + tool registry, durable `ask_human`, Auditor,
-Analyst Agent, scheduling closed loop with cross-round validation.
-**Deliberately cut for hours** (still good ideas, just not this event): NL
-constraint steering, "Learned from you" preference memory card, Night Shift
-autonomous job, voice co-pilot, Digital Twin no-show simulation, agent-to-agent
-negotiation, reflection loop, self-proposed eligibility rules.
+**Built:** agentic orchestrator + tool registry (two profiles: `shortlist`,
+`schedule`), durable `ask_human`, Auditor, Analyst Agent, Onyx free-text
+sidebar, scheduling closed loop with cross-round validation.
+**Built then removed (2026-09-04):** agent-to-agent schedule negotiation and
+the Onyx supervisor profile that dispatched it. It burned 12–18 model steps
+plus a Company Agent call to reach the schedule the plain `schedule` agent
+reaches in ~4, and by design it could not commit anything — so nothing
+depended on it. Don't rebuild it; the `schedule` profile *is* the scheduler.
+**Never built** (still fine ideas): NL constraint steering, preference memory,
+autonomous night job, Digital Twin no-show simulation, reflection loop,
+self-proposed eligibility rules.
 
 ## Gotchas — do not undo
 - `bcrypt==4.0.1` pinned (5.x breaks passlib).

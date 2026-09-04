@@ -41,7 +41,7 @@ export default function ArchitecturePage() {
           PlacePilot AI — Agent Architecture
         </h1>
         <p className="text-[13px] mt-1 max-w-sm" style={{ color: "#7C8478" }}>
-          Nine real agents, one shared engine. Every tool listed here is a live function in the deployed backend.
+          Two loop agents on one shared engine, plus four one-shot specialists. Every tool listed here is a live function in the deployed backend.
         </p>
         <div className="flex items-center gap-1.5 mt-3 text-[11px]" style={{ color: "#5A665F" }}>
           <MousePointer2 size={12} /> drag to rotate · scroll to zoom · click a node
