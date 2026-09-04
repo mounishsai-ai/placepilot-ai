@@ -4,15 +4,18 @@ Single source of truth for this repo. Supersedes AGENTS.md and AGENTIC_OVERHAUL.
 (deleted 2026-08-27 — their content is folded in here, denser). If either file
 somehow reappears, this one wins.
 
-## Hackathon context
-- Deploy freeze: **2026-08-28 afternoon**. Judging: **2026-08-29**.
-- Judge standard: *"if a judge opens the live URL right now with no setup from
-  us, does this feature actually work?"* — localhost-only is not done.
+## Project context
+Solo college project — one person built and tested every part of this, start to
+finish. It was originally submitted to a college hackathon (2026-08-29); that
+event is over and is no longer what this is for. Current goal: make it stand up
+to review by experienced engineers as a portfolio project.
+- Working standard: *"if someone opens the live URL right now with no setup,
+  does this feature actually work?"* — localhost-only is not done.
 
 ## Who you're working with
 Beginner/vibe-coder, not a trained developer, needs to be able to re-explain
-every feature to a judge confidently. Direct, no fluff — wants to understand,
-not just be told.
+every feature confidently to someone technical. Direct, no fluff — wants to
+understand, not just be told.
 - **Every technical explanation: plain English first, then the real term.**
   e.g. "we turn profiles into lists of numbers that capture meaning — an
   *embedding* — then compare them mathematically. That's *cosine similarity*."
@@ -21,7 +24,7 @@ not just be told.
 - When something breaks: what broke (plain English) → what the fix is → what
   they should see now. Never silently fix without explaining.
 - Never fabricate data/results to make something look done. If a path
-  genuinely doesn't work yet, say so plainly — judges reward candor.
+  genuinely doesn't work yet, say so plainly — candour is the whole point.
 
 ## Stack (as actually built, not as originally planned)
 - **Frontend:** Next.js 14 App Router, TS, Tailwind. PlacePilot design system —
@@ -153,8 +156,8 @@ negotiation, reflection loop, self-proposed eligibility rules.
   langchain (`langchain-google-genai` hangs 60s→504 on every model). TF-IDF
   is kept as a real fallback, not the only path.
 
-## Judge Q&A cheat sheet
-| Judge asks | Say |
+## Q&A cheat sheet (interviews, reviews, demos)
+| They ask | Say |
 |---|---|
 | "Is this actually agentic, or a workflow?" | Run the same drive twice with different constraints — two different execution traces. The model picks the tool and its arguments each step; here's the trace. |
 | "What do the sub-agents do?" | Specialists with their own tools/prompts. The Auditor's whole job is to disagree with the others — it checks the shortlist's real numbers before a human signs off. |

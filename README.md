@@ -24,8 +24,8 @@ seeded, not real student records — see [Limitations](#what-this-does-not-solve
 
 ## What this actually is
 
-A working system, deployed, that four people built for a college hackathon. It is
-not production software for a real placement cell, and the
+A working system, deployed, built solo as a college project. It is not production
+software for a real placement cell, and the
 [Limitations](#what-this-does-not-solve) section says plainly where that line falls.
 
 The part worth reviewing is not the four portals or the CRUD around them. It is two
@@ -235,8 +235,9 @@ storage; this was not worth doing for a demo.
 a column to an existing one. Schema changes against a live database currently require
 a manual `ALTER TABLE`. Alembic is the correct fix and is not wired up.
 
-**Not load tested.** It has been exercised by four people and a set of judges. No
-concurrency testing, no load profile, no idea where it breaks.
+**Not load tested.** Every path here has been exercised by hand, by one person.
+No concurrency testing, no load profile, no idea where it breaks under real
+simultaneous use.
 
 **The hosted demo runs on trial credits** and will stop working when they expire.
 
@@ -268,7 +269,7 @@ frontend/src/
   components/      shared UI, agent trace viewer, 3D architecture map
 ```
 
-## Team
+## Author
 
-Built by **Team Apex UltimatriX** — N. Mounish Sai, P. Irfan Khan, T. Bala Jaison,
-D. Akhil Chandra.
+Built by **N. Mounish Sai** — design, backend, agent architecture, frontend and
+deployment. Solo project.
