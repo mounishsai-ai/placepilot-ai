@@ -62,6 +62,12 @@ Rules:
 - Use explicit JOINs when a join is needed; do not use comma joins.
 - Never use SELECT * — name the columns you actually need.
 - Prefer aggregated answers for count, highest, lowest, or comparison questions.
+- Counting people means COUNT(DISTINCT <table>.student_id), not COUNT(*). match_scores,
+  eligibility_results and interview_slots hold one row per student PER DRIVE or PER ROUND, so
+  COUNT(*) there answers "how many records", not "how many students" — and can exceed the
+  number of students that exist.
+- "Placed"/"selected" is interview_slots.result = 'selected'. "Shortlisted" is
+  match_scores.shortlisted = TRUE. There is no placements or offers table.
 - Add LIMIT 100 or less for row-level results. Never guess data; if the question cannot be answered
   from this schema, return {{"sql": ""}}.
 """
@@ -71,6 +77,8 @@ You receive the original question, the read-only SQL that was run, and the actua
 Answer only from those rows. State the result directly, mention when there were no matching rows,
 and do not invent an explanation or claim a total beyond the returned data. Keep it to two or
 three plain-English sentences.
+If you are told the rows were truncated, say so plainly — that the list is the first
+{MAX_QUERY_ROWS} and not the complete set — and never state the row count as if it were a total.
 
 Respond with JSON only:
 {"answer": "concise, factual answer"}
@@ -123,13 +131,25 @@ _BLOCKED_COLUMNS = re.compile(
 )
 
 
+class SqlUnavailable(Exception):
+    """The model call itself failed — as opposed to it returning SQL that was
+    then rejected by the validator.
+
+    Both used to surface as an empty string, so both produced "I was unable to
+    form a safe query, please try rephrasing." They mean opposite things to the
+    person asking: one is "your question doesn't work here", the other is "the
+    service blipped, ask again". Telling a TPO to rephrase a question that was
+    already fine is the bug this separates out.
+    """
+
+
 async def generate_sql(question: str, retry_hint: str = "") -> str:
     prompt = question if not retry_hint else f"{question}\n\n{retry_hint}"
     try:
         result = await generate_json(SQL_SYSTEM, prompt, caller="analyst_agent.sql")
-    except Exception as exc:  # noqa: BLE001 - the endpoint has a deliberate degraded response
+    except Exception as exc:  # noqa: BLE001 - re-raised distinctly, see SqlUnavailable
         logger.warning("analyst_agent: SQL generation failed: {}", type(exc).__name__)
-        return ""
+        raise SqlUnavailable from exc
     sql = result.get("sql") if result else ""
     if not isinstance(sql, str):
         return ""
@@ -202,11 +222,18 @@ def validate_readonly_sql(sql: str) -> str | None:
 
 
 async def summarize_rows(question: str, sql: str, rows: list[dict[str, Any]]) -> str:
-    prompt = json.dumps(
-        {"question": question, "sql": sql, "rows": rows},
-        default=str,
-        ensure_ascii=False,
-    )
+    # A result sitting exactly on the cap was almost certainly cut short. Saying
+    # so is the difference between "the first 100 students" and a confident
+    # "there are 100 students" when there are 201 — which is what this answered
+    # before the summariser was told.
+    truncated = len(rows) >= MAX_QUERY_ROWS
+    payload: dict[str, Any] = {"question": question, "sql": sql, "rows": rows}
+    if truncated:
+        payload["rows_truncated"] = (
+            f"Only the first {MAX_QUERY_ROWS} rows are shown; the real total is larger "
+            f"and is not known from these rows."
+        )
+    prompt = json.dumps(payload, default=str, ensure_ascii=False)
     try:
         result = await generate_json(SUMMARY_SYSTEM, prompt, caller="analyst_agent.summary")
     except Exception as exc:  # noqa: BLE001 - summary failure still has a useful deterministic answer
@@ -218,5 +245,6 @@ async def summarize_rows(question: str, sql: str, rows: list[dict[str, Any]]) ->
 
     logger.warning("analyst_agent: summary call failed after {} returned rows", len(rows))
     if rows:
-        return f"I found {len(rows)} matching row(s). The AI summary could not be generated."
+        cap = f" (capped at {MAX_QUERY_ROWS}, so the real total is higher)" if len(rows) >= MAX_QUERY_ROWS else ""
+        return f"I found {len(rows)} matching row(s){cap}. The summary could not be generated."
     return "No matching placement records were found."

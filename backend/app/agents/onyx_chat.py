@@ -21,7 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.analyst_agent import generate_sql, summarize_rows, validate_readonly_sql
+from app.agents.analyst_agent import generate_sql, summarize_rows, validate_readonly_sql, SqlUnavailable
 
 MAX_CHAT_STEPS = 4
 
@@ -62,17 +62,23 @@ ONYX_CHAT_TOOLS = [
 
 async def _exec_ask_analyst(db: AsyncSession, args: dict) -> dict:
     question = args.get("question") or ""
-    generated_sql = await generate_sql(question)
+    try:
+        generated_sql = await generate_sql(question)
+    except SqlUnavailable:
+        return {"error": "the analyst is temporarily unavailable — the question itself was fine"}
     safe_sql = validate_readonly_sql(generated_sql)
     if not safe_sql:
-        retry_sql = await generate_sql(
-            question,
-            retry_hint=(
-                f"Your previous answer was rejected: {generated_sql or '(empty)'}. Use only the "
-                "exact tables and columns listed above, one plain SELECT, explicit JOINs, no "
-                "CTEs, no SELECT *."
-            ),
-        )
+        try:
+            retry_sql = await generate_sql(
+                question,
+                retry_hint=(
+                    f"Your previous answer was rejected: {generated_sql or '(empty)'}. Use only the "
+                    "exact tables and columns listed above, one plain SELECT, explicit JOINs, no "
+                    "CTEs, no SELECT *."
+                ),
+            )
+        except SqlUnavailable:
+            return {"error": "the analyst is temporarily unavailable — the question itself was fine"}
         safe_sql = validate_readonly_sql(retry_sql)
         if not safe_sql:
             return {"error": "could not form a safe query for that question"}

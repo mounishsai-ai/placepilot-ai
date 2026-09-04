@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from collections import defaultdict
 from loguru import logger
 
-from app.agents.analyst_agent import generate_sql, summarize_rows, validate_readonly_sql
+from app.agents.analyst_agent import generate_sql, summarize_rows, validate_readonly_sql, SqlUnavailable
 from app.database import get_db
 from app.models import (
     Student, PlacementDrive, MatchScore, EligibilityResult,
@@ -47,21 +47,36 @@ async def ask_placement_analyst(
     inherent model variance, give the model one more attempt with the exact
     rejected SQL shown back to it before giving up.
     """
-    generated_sql = await generate_sql(request.question)
+    try:
+        generated_sql = await generate_sql(request.question)
+    except SqlUnavailable:
+        # Not the question's fault — don't tell them to rephrase it.
+        return {
+            "answer": "The analyst is temporarily unavailable — your question was fine, "
+                      "please ask it again in a moment.",
+            "sql": "", "row_count": 0, "sample_rows": [],
+        }
     safe_sql = validate_readonly_sql(generated_sql)
     if not safe_sql:
         logger.warning(
             "analyst_agent: rejected SQL for {!r}: {!r} — retrying once",
             request.question, generated_sql,
         )
-        retry_sql = await generate_sql(
-            request.question,
-            retry_hint=(
-                f"Your previous answer was rejected: {generated_sql or '(empty)'}. "
-                "Use only the exact tables and columns listed above, one plain "
-                "SELECT, explicit JOINs, no CTEs, no SELECT *."
-            ),
-        )
+        try:
+            retry_sql = await generate_sql(
+                request.question,
+                retry_hint=(
+                    f"Your previous answer was rejected: {generated_sql or '(empty)'}. "
+                    "Use only the exact tables and columns listed above, one plain "
+                    "SELECT, explicit JOINs, no CTEs, no SELECT *."
+                ),
+            )
+        except SqlUnavailable:
+            return {
+                "answer": "The analyst is temporarily unavailable — your question was fine, "
+                          "please ask it again in a moment.",
+                "sql": "", "row_count": 0, "sample_rows": [],
+            }
         safe_sql = validate_readonly_sql(retry_sql)
         if not safe_sql:
             logger.warning(
