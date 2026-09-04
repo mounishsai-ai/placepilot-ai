@@ -285,7 +285,7 @@ function SchedulePageInner() {
     <div className="min-h-screen bg-cosmic flex">
       <TPOSidebar />
       <div className="ml-64 flex-1 flex flex-col">
-        <TopBar title="Interview Schedule" subtitle="FCFS auto-allocation · manage interview rounds" />
+        <TopBar title="Interview Schedule" subtitle="Agent-planned rounds, validated across every drive" />
 
         <main className="p-8 space-y-6">
           <div className="grid grid-cols-4 gap-4">
@@ -386,7 +386,7 @@ function SchedulePageInner() {
               style={{ border: "1px solid var(--gold-ln)" }}
             >
               <h3 className="font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--fg)" }}>
-                <Calendar size={16} style={{ color: "var(--jade)" }} /> Create Interview Round + Auto-Schedule
+                <Calendar size={16} style={{ color: "var(--jade)" }} /> Create Interview Round
               </h3>
               <div className="grid grid-cols-3 gap-4 mb-4">
                 <div>
@@ -476,7 +476,7 @@ function SchedulePageInner() {
                   {creating ? (
                     <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: "rgba(255,255,255,.3)", borderTopColor: "#fff" }} />
                   ) : <Calendar size={14} />}
-                  Create & Auto-Schedule
+                  Create & plan the round
                 </button>
               </div>
             </motion.div>
@@ -508,7 +508,7 @@ function SchedulePageInner() {
             </div>
           ) : visibleGroups.length === 0 ? (
             <div className="glass-card text-center py-16 text-sm" style={{ color: "var(--faint)" }}>
-              No interview slots yet. Create a round above to auto-schedule shortlisted candidates.
+              No interview slots yet. Create a round above and the agent will plan one for the shortlisted candidates.
             </div>
           ) : (
             <div className="space-y-4">

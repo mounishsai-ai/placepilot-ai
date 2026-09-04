@@ -628,7 +628,7 @@ function ScheduleRoundModal({
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-white font-bold text-lg">&#x1F4C5; Create Interview Round</h2>
-            <p className="text-white/40 text-sm mt-0.5">Set the date window — FCFS algorithm assigns slots automatically</p>
+            <p className="text-white/40 text-sm mt-0.5">Set the date window — the scheduling agent proposes slots, then checks them</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -720,8 +720,10 @@ function ScheduleRoundModal({
           <div className="bg-blue-500/[0.08] border border-blue-500/20 rounded-xl px-4 py-3 flex items-start gap-3">
             <Zap size={15} className="text-blue-400 flex-shrink-0 mt-0.5" />
             <p className="text-blue-300/80 text-xs">
-              The FCFS algorithm will auto-assign rooms and panel members, with no conflicts.
-              You&apos;ll review the generated schedule before students are notified.
+              The agent proposes an allocation of rooms and panel members, then validates it
+              against every slot already committed across all other drives and rounds. If it
+              finds a clash, it re-plans and re-checks before committing. You&apos;ll review the
+              result before students are notified.
             </p>
           </div>
         </div>
@@ -737,7 +739,7 @@ function ScheduleRoundModal({
             {scheduling ? (
               <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Scheduling…</>
             ) : (
-              <><Calendar size={15} /> Auto-Schedule Interviews</>
+              <><Calendar size={15} /> Start the scheduling agent</>
             )}
           </button>
         </div>

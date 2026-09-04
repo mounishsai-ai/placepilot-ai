@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  PieChart, Pie, Cell, Legend, ResponsiveContainer,
-  LineChart, Line,
+  PieChart, Pie, Cell, ResponsiveContainer,
 } from "recharts";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
@@ -86,13 +85,6 @@ export default function AnalyticsPage() {
       )
     : [];
 
-  // Mock placement trend data for demo
-  const trendData = [
-    { month: "Jan", placed: 12 }, { month: "Feb", placed: 28 },
-    { month: "Mar", placed: 45 }, { month: "Apr", placed: 38 },
-    { month: "May", placed: 62 }, { month: "Jun", placed: 74 },
-  ];
-
   const branchData = (((readiness as Record<string, unknown>)?.by_branch as Record<string, unknown>[]) ?? [])
     .slice(0, 8)
     .map((b) => ({
@@ -131,13 +123,9 @@ export default function AnalyticsPage() {
         <TopBar title="Placement Analytics" subtitle="Skill gaps, readiness, and placement trends" />
 
         <main className="flex-1 p-8 space-y-8">
-          {/* Rebuilt from the version Codex's lower-end model produced — that one
-              hardcoded a dark-navy/neon-emerald glass card (#07120e, /85, /55
-              text opacities) that the light-theme migration shim has no entries
-              for at all, so it would have rendered as a literal dark box sitting
-              in the middle of this otherwise all-white page. Restyled onto the
-              same tokens and utility classes (.glass-card, .input-glass,
-              .btn-primary) every other card on this page already uses. */}
+          {/* Styled with the shared tokens and utility classes (.glass-card,
+              .input-glass, .btn-primary) rather than hardcoded colours, so this
+              card follows the light palette like every other one on the page. */}
           <motion.section
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -343,58 +331,33 @@ export default function AnalyticsPage() {
             </motion.div>
           </div>
 
-          {/* ── Row 2: Placement Trend + Branch Stats ─────────────── */}
-          <div className="grid grid-cols-2 gap-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="glass-card"
-            >
-              <h2 className="text-white font-semibold mb-1">Placement Trend</h2>
-              <p className="text-white/40 text-xs mb-6">Students placed per month (2025)</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
-                  <XAxis dataKey="month" tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip {...TooltipStyle} />
-                  <Line
-                    type="monotone"
-                    dataKey="placed"
-                    stroke="#0FA968"
-                    strokeWidth={2.5}
-                    dot={{ fill: "#0FA968", strokeWidth: 0, r: 4 }}
-                    activeDot={{ r: 6, fill: "#0A6B44" }}
-                    name="Students Placed"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="glass-card"
-            >
-              <h2 className="text-white font-semibold mb-1">Branch-wise Readiness</h2>
-              <p className="text-white/40 text-xs mb-6">Average readiness score by branch</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={branchData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
-                  <XAxis dataKey="branch" tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} />
-                  <Tooltip {...TooltipStyle} />
-                  <Bar dataKey="readiness" radius={[6, 6, 0, 0]} name="Avg Readiness">
-                    {branchData.map((_, idx) => (
-                      <Cell key={idx} fill={BRANCH_SERIES[idx % BRANCH_SERIES.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </motion.div>
-          </div>
+          {/* ── Row 2: Branch Stats ──────────────────────────────────
+              A "Placement Trend" line chart used to sit beside this one, fed
+              by a hardcoded six-month array. There is no placed-per-month
+              series in the API, so there was nothing real to plot — the chart
+              is gone rather than faked, and this one takes the full width. */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="glass-card"
+          >
+            <h2 className="font-semibold mb-1" style={{ color: "var(--fg)" }}>Branch-wise Readiness</h2>
+            <p className="text-xs mb-6" style={{ color: "var(--ash)" }}>Average readiness score by branch</p>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={branchData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+                <XAxis dataKey="branch" tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: AXIS, fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} />
+                <Tooltip {...TooltipStyle} />
+                <Bar dataKey="readiness" radius={[6, 6, 0, 0]} name="Avg Readiness">
+                  {branchData.map((_, idx) => (
+                    <Cell key={idx} fill={BRANCH_SERIES[idx % BRANCH_SERIES.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </motion.div>
         </main>
       </div>
     </div>
