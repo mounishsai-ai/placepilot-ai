@@ -34,9 +34,15 @@
   --line-2:    #F0F4F2;
 
   --fg:        #0B1714;
-  --ash:       #5F706A;
-  --faint:     #93A29C;
-  --ghost:     #B6C2BD;
+  /* Secondary text was set for an ink background, where mid-greys read as
+     bright. On white they do the opposite — #5F706A for every label, caption
+     and helper line left most of the writing on the page looking faded.
+     Darkened hard. The three still step apart, because collapsing them all to
+     --fg would make a stat's number and its label carry equal weight, and the
+     number is the thing being read. */
+  --ash:       #2A3733;   /* body-adjacent: labels, captions, helper text */
+  --faint:     #4A5854;   /* de-emphasised: field labels, timestamps */
+  --ghost:     #7A8884;   /* furthest back: placeholders, disabled */
 
   --gold:      #D9922B;
   --gold-d:    #8A5A12;

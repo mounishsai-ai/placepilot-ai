@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, Play, AlertTriangle } from "lucide-react";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
 import AgentTrace, { AgentRun } from "@/components/ui/AgentTrace";
@@ -228,6 +228,22 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
                 ? "Every step below was chosen by the model, not by a script — the order isn't hardcoded anywhere. Where it stopped, it stopped to ask."
                 : "Start the agent and it will read the job description, work out who qualifies, rank them, then stop and ask you before anything is finalised."}
             </p>
+
+            {/* A failed run used to say only "stopped early", which is true of a
+                rate limit, a bad model name and a dead credential alike. The
+                reason comes from the run itself so the reader knows whether to
+                retry or to fix something. */}
+            {run?.status === "failed" && typeof (run as { error?: string }).error === "string" && (
+              <div
+                className="mt-4 rounded-xl px-4 py-3 flex items-start gap-3 max-w-[64ch]"
+                style={{ background: "var(--rose-lt)", border: "1px solid #F3C9C6" }}
+              >
+                <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#98332E" }} />
+                <p className="text-[12.5px] leading-relaxed" style={{ color: "#98332E" }}>
+                  {(run as { error?: string }).error}
+                </p>
+              </div>
+            )}
           </div>
 
           {loading ? (

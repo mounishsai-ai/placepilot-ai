@@ -456,6 +456,8 @@ async def get_agent_run(
         "id": run.id,
         "drive_id": run.drive_id,
         "status": run.status.value,
+        # Why it failed, not just that it did — see orchestrator._mark_failed.
+        "error": (run.state_json or {}).get("error"),
         "pending_question": run.pending_question,
         "created_at": run.created_at.isoformat() + "Z",
         "updated_at": run.updated_at.isoformat() + "Z",

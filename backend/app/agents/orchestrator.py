@@ -360,6 +360,40 @@ async def _run_loop(
             logger.error(f"[{run.drive_id}] could not even mark run failed: {commit_err}")
 
 
+def _failure_reason(exc: Exception) -> str:
+    """A sentence a TPO can act on, instead of an httpx exception.
+
+    The raw text is the wrong thing to show twice over: it reads as a stack
+    trace, and it carries the full request URL including the cloud project id.
+    Rate limiting in particular needs saying plainly — it is temporary and the
+    run can simply be started again, which "Client error '429 Too Many
+    Requests'" does not convey to anyone who is not a developer.
+    """
+    text = str(exc)
+    if "429" in text or "quota" in text.lower() or "RESOURCE_EXHAUSTED" in text:
+        return ("The AI service is rate limited right now, so the agent could not run. "
+                "Nothing was scheduled. Wait a few minutes and start it again.")
+    if "404" in text and "model" in text.lower():
+        return "The configured AI model is unavailable. Check ORCHESTRATOR_MODEL."
+    if "401" in text or "403" in text:
+        return "The AI service rejected our credentials. Check the API key or project access."
+    return "The agent stopped because the AI service could not be reached. Nothing was changed."
+
+
+def _mark_failed(run: AgentRun, reason: str) -> None:
+    """Record why, not just that.
+
+    agent_runs has no error column and this project has no migrations, so the
+    reason goes in state_json — the same place `kind` lives, for the same
+    reason. Without it a failed run is indistinguishable from any other failed
+    run in the UI, which is how a rate limit came to look like a dead button.
+    """
+    run.status = AgentRunStatus.FAILED
+    state = dict(run.state_json or {})
+    state["error"] = reason
+    run.state_json = state
+
+
 async def _run_loop_inner(
     db: AsyncSession, run: AgentRun, ctx: ToolContext | ScheduleContext,
     contents: list[dict], kind: str = "shortlist",
@@ -377,15 +411,16 @@ async def _run_loop_inner(
             response = await _call_gemini(contents, system_prompt, tool_declarations)
         except Exception as e:
             logger.error(f"[{run.drive_id}] orchestrator Gemini call failed: {e}")
-            run.status = AgentRunStatus.FAILED
+            reason = _failure_reason(e)
+            _mark_failed(run, reason)
             await db.commit()
-            await _log_trace(db, run, seq, "orchestrator", "violation", f"Gemini call failed: {e}")
+            await _log_trace(db, run, seq, "orchestrator", "violation", reason)
             return
         cost_ms = int((time.time() - t0) * 1000)
 
         candidates = response.get("candidates") or []
         if not candidates:
-            run.status = AgentRunStatus.FAILED
+            _mark_failed(run, "The AI service returned an empty response. Nothing was changed.")
             await db.commit()
             await _log_trace(db, run, seq, "orchestrator", "violation", "Gemini returned no candidates")
             return

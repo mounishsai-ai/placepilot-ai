@@ -165,6 +165,26 @@ function SchedulePageInner() {
     }
   }, []);
 
+  // Arriving straight from "start the scheduling agent" means the agent is
+  // still proposing and validating, so this drive has no committed slots yet
+  // and the page would sit empty until a manual refresh. Poll briefly, and
+  // stop the moment its slots land. Only when ?drive= sent us here — there is
+  // nothing to wait for otherwise.
+  useEffect(() => {
+    if (!highlightDriveId) return;
+    if (slots.some((s) => s.drive_id === highlightDriveId)) return;
+    let stop = false;
+    let tries = 0;
+    const tick = async () => {
+      if (stop || tries >= 30) return;   // ~2 min ceiling
+      tries += 1;
+      await fetchSlots();
+      if (!stop) setTimeout(tick, 4000);
+    };
+    const t = setTimeout(tick, 4000);
+    return () => { stop = true; clearTimeout(t); };
+  }, [highlightDriveId, slots, fetchSlots]);
+
   useEffect(() => {
     fetchSlots();
     drivesAPI.list().then((res) => {

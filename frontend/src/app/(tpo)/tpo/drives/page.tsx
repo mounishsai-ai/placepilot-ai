@@ -656,6 +656,7 @@ function ScheduleRoundModal({
   const [mode, setMode]                   = useState<"offline" | "online">("offline");
   const [venue, setVenue]                 = useState("");
   const [scheduling, setScheduling]       = useState(false);
+  const router = useRouter();
 
   const handleSchedule = async () => {
     if (!startDatetime || !endDatetime) {
@@ -680,8 +681,14 @@ function ScheduleRoundModal({
       // Step 2: start the scheduling agent (propose \u2192 validate \u2192 re-plan \u2192 commit)
       await scheduleAPI.runAgent(roundId);
 
-      toast.success("Scheduling agent started \u2014 watch it in the agent dock.");
+      // The old copy pointed at the agent dock, which was deleted deliberately.
+      // That left the modal closing onto nothing: the agent worked in the
+      // background, and a failure looked exactly like the button doing nothing.
+      // Go to the next step instead — the schedule, which is the thing the TPO
+      // confirms. That page waits there while the agent proposes and validates.
+      toast.success("Scheduling agent started — confirm the schedule when it lands.");
       onScheduled();
+      router.push(`/tpo/schedule?drive=${driveId}`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(msg ?? "Failed to create schedule");
