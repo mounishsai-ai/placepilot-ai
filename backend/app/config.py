@@ -13,8 +13,6 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/placement_db"
     SYNC_DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/placement_db"
 
-    REDIS_URL: str = "redis://localhost:6379/0"
-
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.5-flash-lite"      # 500 RPD, 15 RPM — primary workhorse
     GEMINI_MODEL_PRO: str = "gemini-3.5-flash"           # high-quality JD analysis; gemini-3.6-flash measured ~27s/call vs ~5.7s here
@@ -53,9 +51,6 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_PHONE_NUMBER: str = ""
     TWILIO_WHATSAPP_NUMBER: str = ""
-
-    GOOGLE_CALENDAR_CREDENTIALS_FILE: str = "./credentials/google_calendar.json"
-    GOOGLE_CALENDAR_ID: str = "primary"
 
     FRONTEND_URL: str = "http://localhost:3000"
     UPLOAD_DIR: str = "./uploads"

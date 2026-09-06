@@ -30,10 +30,16 @@ understand, not just be told.
 - **Frontend:** Next.js 14 App Router, TS, Tailwind. PlacePilot design system —
   light theme, dense/editorial, NOT the old dark glassmorphism.
 - **Backend:** FastAPI, async SQLAlchemy, PostgreSQL (Cloud SQL in prod).
-- **LLM:** Vertex AI Gemini — NOT AI Studio free tier (20 req/day ceiling
-  would kill a live demo). `gemini-2.5-flash` for the orchestrator (function
-  calling, verified live) and one-shot JSON agents; `gemini-3.5-flash` /
-  `-flash-lite` elsewhere.
+- **LLM:** Gemini, over **either** backend — `gemini_transport.py` picks one
+  and `LLM_BACKEND` (`auto`/`vertex`/`aistudio`) selects it. `auto` uses Vertex
+  only when a GCP project *and* ADC are both present, so a clone with just a
+  `GEMINI_API_KEY` runs on the key path. Vertex has no daily cap, which is why
+  the deployed build used it.
+  **The orchestrator model differs per backend and must:** `gemini-2.5-flash`
+  on Vertex, `gemini-3.5-flash` on the key — 2.5-flash is retired on
+  `generativelanguage.googleapis.com` and 404s for keys issued after its
+  cutoff. Don't collapse these back into one setting.
+  `gemini-3.5-flash` / `-flash-lite` for JD parsing and match explanations.
 - **Deploy:** 100% Google Cloud Run (both services) + Cloud SQL + Artifact
   Registry. No Railway/Vercel — DEPLOYMENT.md is stale, ignore it.
 - **No Alembic.** `create_all` only adds new *tables*, never new columns on
@@ -172,7 +178,9 @@ self-proposed eligibility rules.
 | "Can it answer something you didn't pre-build a screen for?" | The Analyst Agent — ask it any placement-data question, it writes the SQL live, shows it to you, runs it read-only, and answers from the real rows. |
 
 ## Doc map
-- `MY_SYSTEM_DESIGN.md` / `SYSTEM_DESIGN.md` — beginner-friendly architecture
-  diagrams, not kept in sync with every change; verify against code first.
-- `problem statement.md` — original hackathon brief.
+- `README.md` — the repo's front door: the two hard problems, architecture,
+  setup, and an explicit limitations section. Keep it honest.
+- `MY_SYSTEM_DESIGN.md` / `SYSTEM_DESIGN.md` / `problem statement.md` exist on
+  this machine but are **untracked and gitignored** — they are stale and were
+  deliberately kept out of the repo. Don't cite them as if a cloner has them.
 - Everything else that used to be in AGENTS.md / AGENTIC_OVERHAUL.md is above.

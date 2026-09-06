@@ -5,7 +5,13 @@ job description through candidate screening to a conflict-free interview schedul
 choosing their own tools at each step, and stopping to hand every irreversible
 decision to a human.
 
-**Live:** https://placement-frontend-891885517174.us-central1.run.app
+<!-- TODO: embed the ~90s demo video here (JD upload -> agent trace -> schedule). -->
+
+**Runs on a Gemini API key and any Postgres database** — no Google Cloud project,
+no billing account. See [Running it](#running-it); setup is three values in a
+`.env` file.
+
+After seeding, sign in as any of these (the sign-in page fills them in for you):
 
 | Role | Email | Password |
 |---|---|---|
@@ -14,17 +20,14 @@ decision to a human.
 | Company HR | `hr@tcs.com` | `company@123` |
 | Interview panel | `panel@company.com` | `panel@123` |
 
-Selecting a role on the sign-in page fills these in. The data behind the demo is
-seeded, not real student records — see [Limitations](#what-this-does-not-solve).
-
-<!-- TODO: record a ~90s screen capture of the JD-upload -> trace -> schedule flow
-     and embed it here. It outlives the hosted demo, which runs on trial credits. -->
+The seed data is generated fixtures, not real student records — see
+[Limitations](#what-this-does-not-solve).
 
 ---
 
 ## What this actually is
 
-A working system, deployed, built solo as a college project. It is not production
+A working system, built solo as a college project. It is not production
 software for a real placement cell, and the
 [Limitations](#what-this-does-not-solve) section says plainly where that line falls.
 
@@ -119,14 +122,32 @@ not commit anything, so nothing depended on it.
 
 ### Models, and why
 
-Two different auth paths, chosen per workload rather than uniformly:
+| Model | Used for | Why this one |
+|---|---|---|
+| `gemini-2.5-flash` | Orchestrator loop and every one-shot JSON agent, **on Vertex** | Native function calling, verified live. |
+| `gemini-3.5-flash` | The same, **on an API key** | `gemini-2.5-flash` is retired on `generativelanguage.googleapis.com` and 404s for keys issued after its cutoff. The two backends cannot share a model. |
+| `gemini-3.5-flash` | JD parsing | Higher quality on this one task; a newer model measured ~27s/call against ~5.7s here. |
+| `gemini-3.5-flash-lite` | Match explanations, résumé parsing | High call volume, low reasoning demand. |
+| `gemini-embedding-001` | Candidate ranking | Called over direct `httpx` REST rather than LangChain, which hung to a 504 on every model. TF-IDF is kept as a real fallback, not a stub. |
 
-| Model | Access | Used for | Why this one |
-|---|---|---|---|
-| `gemini-2.5-flash` | Vertex AI (ADC) | Orchestrator loop, and every one-shot JSON agent | Native function calling, verified live. On Vertex rather than the AI Studio free tier because that tier's daily request ceiling would have killed a live demo mid-run. |
-| `gemini-3.5-flash` | AI Studio key | JD parsing | Higher quality on this one task; a newer model measured ~27s/call against ~5.7s here. |
-| `gemini-3.5-flash-lite` | AI Studio key | Match explanations, résumé parsing | High call volume, low reasoning demand. |
-| `gemini-embedding-001` | Vertex AI | Candidate ranking | Called over direct `httpx` REST rather than LangChain, which hung to a 504 on every model. TF-IDF is kept as a real fallback, not a stub. |
+### Two backends behind one interface
+
+The same models are reachable two ways: **Vertex AI**, authorised with an ADC
+bearer token and billed to a GCP project, or **AI Studio**, authorised with an
+API key and free up to a daily cap. The original build used Vertex because that
+daily cap would have been hit partway through a live demo.
+
+`gemini_transport.py` hides the difference, and `LLM_BACKEND` selects it —
+defaulting to `auto`, which uses Vertex only when a project *and* credentials
+are both present. That is what lets this repo start from an API key alone.
+
+The two are not as symmetric as they look. `generateContent` takes byte-identical
+request and response JSON, so the agent loop needed no changes. **Embeddings do
+not**: Vertex uses `:predict` with an `instances` list, AI Studio uses
+`:batchEmbedContents` with a `requests` list, and the vector is nested
+differently in each response. `embed_texts` normalises both — and since the
+caller falls back to TF-IDF on any exception, getting this wrong would have
+silently degraded ranking with nothing visible in the UI.
 
 `gemini-2.5-flash` is a thinking model and can emit a `"thought": true` part *before*
 the answer part. `vertex_json.py` scans all parts and skips thought parts —
@@ -146,23 +167,15 @@ what the agent actually did.
 
 ## Running it
 
-The system runs without any LLM key — embeddings fall back to TF-IDF and the
-LLM-dependent features degrade rather than crash — but the agent loops need one to
-do anything interesting.
+You need two things: **a Postgres database** and **a Gemini API key** from
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) (free, no billing
+account). Any Postgres 14+ works — local, or a free hosted one.
 
-### With Docker (whole stack)
+The app also runs with no key at all: embeddings fall back to TF-IDF and the
+LLM-dependent features degrade rather than crash. The agent loops need one to do
+anything interesting.
 
-```bash
-cp backend/.env.example backend/.env        # add GEMINI_API_KEY here for the full path
-docker compose up --build
-docker compose exec api python -m seed.seed_db
-```
-
-Then open http://localhost:3000 and sign in with any role above.
-
-### Manually
-
-Requires Python 3.11+, Node 18+, and PostgreSQL 14+.
+Requires Python 3.11+ and Node 18+.
 
 #### Backend
 
@@ -170,10 +183,14 @@ Requires Python 3.11+, Node 18+, and PostgreSQL 14+.
 cd backend
 python -m venv venv && source venv/bin/activate    # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env                                # then fill in DATABASE_URL and keys
+cp .env.example .env                                # fill in the three required values
 python -m seed.seed_db                              # seeds demo users, students, drives
 uvicorn app.main:app --reload --port 8000
 ```
+
+The three required values in `.env` are `DATABASE_URL`, `SYNC_DATABASE_URL` and
+`GEMINI_API_KEY`. Leave `GCP_PROJECT_ID` empty unless you actually have a
+Vertex-enabled project — with it empty, every model call goes to the key.
 
 API docs at `http://localhost:8000/api/docs`.
 
@@ -182,18 +199,22 @@ API docs at `http://localhost:8000/api/docs`.
 ```bash
 cd frontend
 npm install
-NEXT_PUBLIC_API_URL=http://localhost:8000 \
-NEXT_PUBLIC_WS_URL=ws://localhost:8000 \
+cp .env.example .env.local     # defaults to a backend on localhost:8000
 npm run dev
 ```
 
 `NEXT_PUBLIC_*` variables are inlined by Next.js **at build time**, not read at
 runtime — a production build without them ships a frontend that cannot reach the API.
 
+There is also a `docker-compose.yml` covering Postgres, API and frontend
+together, if you would rather not install Python and Node locally.
+
 ### Deployment
 
-Both services run on Google Cloud Run with Cloud SQL for Postgres and Vertex AI for
-inference. Build and deploy commands are in `CLAUDE.md`.
+It was built and run on Google Cloud Run with Cloud SQL and Vertex AI; those
+commands are in `CLAUDE.md`. Nothing in the code requires that — with
+`LLM_BACKEND` on the key path and a hosted Postgres, it deploys anywhere that
+runs a container.
 
 ---
 
@@ -237,8 +258,6 @@ a manual `ALTER TABLE`. Alembic is the correct fix and is not wired up.
 **Not load tested.** Every path here has been exercised by hand, by one person.
 No concurrency testing, no load profile, no idea where it breaks under real
 simultaneous use.
-
-**The hosted demo runs on trial credits** and will stop working when they expire.
 
 ---
 
