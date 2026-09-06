@@ -324,6 +324,31 @@ async def run_agent(
     if not drive.jd_text:
         raise HTTPException(status_code=400, detail="JD text is required before running the agent")
 
+    # Same guard as the scheduling agent: one loop per drive. Without it every
+    # extra click starts another, and concurrent loops on one drive exhaust the
+    # model's per-minute quota between them.
+    active = await db.execute(
+        select(AgentRun)
+        .where(
+            AgentRun.drive_id == drive_id,
+            AgentRun.status.in_([AgentRunStatus.RUNNING, AgentRunStatus.PAUSED]),
+        )
+        .order_by(AgentRun.created_at.desc())
+        .limit(1)
+    )
+    existing = active.scalar_one_or_none()
+    if existing:
+        return {
+            "message": (
+                "This drive already has an agent waiting for you."
+                if existing.status == AgentRunStatus.PAUSED
+                else "An agent is already running for this drive."
+            ),
+            "run_id": existing.id,
+            "drive_id": drive_id,
+            "already_running": True,
+        }
+
     run = await orchestrator.create_run(db, drive_id)
     background_tasks.add_task(_run_agent_bg, run.id, drive_id)
     return {"message": "Agent run started", "drive_id": drive_id, "run_id": run.id}

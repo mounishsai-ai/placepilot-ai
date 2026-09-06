@@ -93,8 +93,8 @@ async def run_schedule_agent(
     """Start the scheduling agent for this round: it proposes a schedule,
     validates it against every other interview already on the calendar, and
     re-plans until clean (or asks the TPO) before committing — see CLAUDE.md.
-    Runs in the background; progress shows up in the same live trace / agent
-    dock as the shortlist agent, keyed off the same drive_id.
+    Runs in the background; progress shows up in the same live trace as the
+    shortlist agent, keyed off the same drive_id.
 
     Replaces the old auto-schedule endpoint, which wrote slots straight from
     allocate_slots() with no check against other rounds' bookings at all."""
@@ -112,6 +112,37 @@ async def run_schedule_agent(
             status_code=400,
             detail="No shortlisted students for this drive. Approve a shortlist first, then schedule.",
         )
+
+    # One agent per drive at a time. Nothing enforced this, so every click
+    # started another orchestrator loop against the same drive — and when the
+    # UI gave no sign a run had begun, clicking again was the obvious thing to
+    # do. Four concurrent loops went out in one minute and exhausted the
+    # model's per-minute quota, which then read as "the button is broken".
+    #
+    # Returning the run already in flight rather than erroring: pressing the
+    # button twice should land you on the same run, not on a failure.
+    active = await db.execute(
+        select(AgentRun)
+        .where(
+            AgentRun.drive_id == round_.drive_id,
+            AgentRun.status.in_([AgentRunStatus.RUNNING, AgentRunStatus.PAUSED]),
+        )
+        .order_by(AgentRun.created_at.desc())
+        .limit(1)
+    )
+    existing = active.scalar_one_or_none()
+    if existing:
+        return {
+            "message": (
+                "This drive already has an agent waiting for you."
+                if existing.status == AgentRunStatus.PAUSED
+                else "The scheduling agent is already running for this drive."
+            ),
+            "drive_id": round_.drive_id,
+            "round_id": round_id,
+            "run_id": existing.id,
+            "already_running": True,
+        }
 
     run = await orchestrator.create_run(db, round_.drive_id, kind="schedule", round_id=round_id)
     background_tasks.add_task(_run_schedule_agent_bg, run.id, round_.drive_id)
