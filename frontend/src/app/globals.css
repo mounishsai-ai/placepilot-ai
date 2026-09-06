@@ -585,5 +585,59 @@ h1 em, h2 em, h3 em, .hl {
   .bg-emerald-400, .bg-green-400 { background-color: var(--jade) !important; }
   .bg-amber-400 { background-color: var(--gold) !important; }
   .bg-rose-400, .bg-rose-500 { background-color: var(--rose) !important; }
+
+  /* ── Opacity-modified accents ───────────────────────────────────────────
+     The class rules above match `bg-blue-500` exactly, so `bg-blue-500/20`
+     and `bg-blue-500/[0.08]` fell straight through them and rendered as real
+     blue — around sixty of them, on a jade page. The scheduling modal was the
+     worst of it: `text-blue-300/80` on `bg-blue-500/[0.08]`, which is pale
+     blue text on a pale blue panel and effectively unreadable.
+
+     Attribute selectors catch every variant, since Tailwind writes the
+     modifier into the class name itself. Tints collapse to the palette's own
+     pale surfaces rather than a translucent accent: the opacity existed to
+     keep a bright colour readable on an ink background, and there is no ink
+     background here for it to sit on. */
+  [class*="bg-blue-500/"], [class*="bg-blue-400/"],
+  [class*="bg-purple-500/"], [class*="bg-purple-400/"],
+  [class*="bg-cyan-500/"], [class*="bg-cyan-400/"],
+  [class*="bg-emerald-500/"], [class*="bg-emerald-400/"],
+  [class*="bg-green-500/"], [class*="bg-green-400/"] {
+    background-color: var(--wash) !important;
+  }
+  [class*="bg-amber-500/"], [class*="bg-amber-400/"],
+  [class*="bg-yellow-500/"], [class*="bg-yellow-400/"] {
+    background-color: var(--gold-lt) !important;
+  }
+  [class*="bg-rose-500/"], [class*="bg-rose-400/"],
+  [class*="bg-red-500/"], [class*="bg-red-400/"] {
+    background-color: var(--rose-lt) !important;
+  }
+
+  [class*="border-blue-500/"], [class*="border-blue-400/"],
+  [class*="border-purple-500/"], [class*="border-purple-400/"],
+  [class*="border-cyan-500/"], [class*="border-cyan-400/"],
+  [class*="border-emerald-500/"], [class*="border-emerald-400/"],
+  [class*="border-green-500/"], [class*="border-green-400/"] {
+    border-color: #CBEDDD !important;
+  }
+  [class*="border-amber-500/"], [class*="border-amber-400/"],
+  [class*="border-yellow-500/"], [class*="border-yellow-400/"] {
+    border-color: var(--gold-ln) !important;
+  }
+  [class*="border-rose-500/"], [class*="border-rose-400/"],
+  [class*="border-red-500/"], [class*="border-red-400/"] {
+    border-color: #F3C9C6 !important;
+  }
+
+  /* Text keeps the contrast-safe dark variants — a tint would be unreadable. */
+  [class*="text-blue-300/"], [class*="text-blue-400/"],
+  [class*="text-purple-300/"], [class*="text-cyan-300/"],
+  [class*="text-emerald-300/"], [class*="text-emerald-400/"],
+  [class*="text-green-400/"] { color: var(--jade-d) !important; }
+  [class*="text-amber-300/"], [class*="text-amber-400/"],
+  [class*="text-yellow-400/"] { color: var(--gold-d) !important; }
+  [class*="text-rose-300/"], [class*="text-rose-400/"],
+  [class*="text-red-400/"] { color: #98332E !important; }
 }
 
