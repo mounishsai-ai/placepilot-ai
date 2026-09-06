@@ -1,14 +1,14 @@
 # CLAUDE.md — PlacePilot AI
 
 Single source of truth for this repo. Current state only: what is here now and
-what will break if you change it. No history.
+what will break if you change it.
 
 ## What this is
 An agentic campus-placement system. A drive goes from a raw job description
 through eligibility and ranking to a conflict-free interview schedule, stopping
 to hand every irreversible decision to a human.
 
-Solo project, built to stand up to review by experienced engineers.
+Solo project.
 
 **Never fabricate data or results to make something look finished.** If a path
 does not work, say so. Every number on screen must be computed from real data —
