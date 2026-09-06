@@ -386,8 +386,9 @@ export default function ControlTowerPage({ params }: { params: { id: string } })
                     </h3>
                     <p className="text-[11px] leading-relaxed" style={{ color: "var(--ash)" }}>
                       When the agent asks you something, the whole conversation is written to Postgres before it
-                      pauses. This run was resumed after a full container replacement on Cloud Run —{" "}
-                      <b style={{ color: "var(--jade-d)" }}>tested by killing it</b>, not assumed.
+                      pauses, so the run outlives the process holding it. Verified by killing the container
+                      mid-pause and confirming it resumed on a fresh one —{" "}
+                      <b style={{ color: "var(--jade-d)" }}>tested, not assumed</b>.
                     </p>
                   </div>
 
