@@ -1,111 +1,59 @@
-# CLAUDE.md — PlacePilot AI (AI Campus Placement Agent)
+# CLAUDE.md — PlacePilot AI
 
-Single source of truth for this repo. Supersedes AGENTS.md and AGENTIC_OVERHAUL.md
-(deleted 2026-08-27 — their content is folded in here, denser). If either file
-somehow reappears, this one wins.
+Single source of truth for this repo. Current state only: what is here now and
+what will break if you change it. No history.
 
-## Project context
-Solo college project — one person built and tested every part of this, start to
-finish. It was originally submitted to a college hackathon (2026-08-29); that
-event is over and is no longer what this is for. Current goal: make it stand up
-to review by experienced engineers as a portfolio project.
-- Working standard: *"if someone opens the live URL right now with no setup,
-  does this feature actually work?"* — localhost-only is not done.
+## What this is
+An agentic campus-placement system. A drive goes from a raw job description
+through eligibility and ranking to a conflict-free interview schedule, stopping
+to hand every irreversible decision to a human.
 
-## Who you're working with
-Beginner/vibe-coder, not a trained developer, needs to be able to re-explain
-every feature confidently to someone technical. Direct, no fluff — wants to
-understand, not just be told.
-- **Every technical explanation: plain English first, then the real term.**
-  e.g. "we turn profiles into lists of numbers that capture meaning — an
-  *embedding* — then compare them mathematically. That's *cosine similarity*."
-- When adding a feature: say what it does in 1 sentence, which layer changes,
-  any tradeoff, and exactly what to click to verify.
-- When something breaks: what broke (plain English) → what the fix is → what
-  they should see now. Never silently fix without explaining.
-- Never fabricate data/results to make something look done. If a path
-  genuinely doesn't work yet, say so plainly — candour is the whole point.
+Solo project, built to stand up to review by experienced engineers.
 
-## Stack (as actually built, not as originally planned)
-- **Frontend:** Next.js 14 App Router, TS, Tailwind. PlacePilot design system —
-  light theme, dense/editorial, NOT the old dark glassmorphism.
-- **Backend:** FastAPI, async SQLAlchemy, PostgreSQL (Cloud SQL in prod).
-- **LLM:** Gemini over one path — `generativelanguage.googleapis.com` with a
-  `GEMINI_API_KEY`. `gemini_transport.py` is the only place that knows the URL
+**Never fabricate data or results to make something look finished.** If a path
+does not work, say so. Every number on screen must be computed from real data —
+no hardcoded stats, no placeholder trends. This is the standard the whole repo
+is held to.
+
+## Stack
+- **Frontend:** Next.js 14 App Router, TypeScript, Tailwind. Light theme,
+  dense/editorial. Glass surfaces use `backdrop-filter` plus an SVG
+  displacement filter (`LiquidGlassFilter`); the ambient wash on `body::before`
+  exists so there is something to refract.
+- **Backend:** FastAPI, async SQLAlchemy, PostgreSQL.
+- **LLM:** Gemini via `generativelanguage.googleapis.com` with a
+  `GEMINI_API_KEY`. `gemini_transport.py` is the only module that knows the URL
   or the auth header.
-  **`ORCHESTRATOR_MODEL` is `gemini-3.5-flash`, not `gemini-2.5-flash`.** The
-  loop was built and verified on 2.5-flash, but that model is retired on this
-  endpoint and 404s for keys issued after its cutoff. Don't "restore" it.
-  `gemini-3.5-flash` / `-flash-lite` for JD parsing and match explanations.
-- **Gemini Enterprise is optional and opt-in** (`LLM_BACKEND=vertex` + `GCP_PROJECT_ID`
-  + ADC). Removed 2026-09-06 and restored the same day: the free key tier 429s
-  partway through a single drive, which made it impossible to record a demo.
-  Gemini Enterprise bills quota to the project instead. The platform was renamed the
-  Gemini Enterprise Agent Platform at Cloud Next 2026, but
-  `aiplatform.googleapis.com` is unchanged.
-- **`docker-compose.override.yml` (gitignored) is what puts this machine on
-  Gemini Enterprise** — it mounts the host's ADC file into the container and pins
-  `LLM_BACKEND=vertex`. Nobody cloning the repo has those credentials, which is
-  why it is not in `docker-compose.yml`.
-- **Embedding batches cap at 100 on the key path** (`MAX_EMBED_BATCH`).
-  Gemini Enterprise's `:predict` has no such limit; 200 was tuned for it and made every
-  key-path batch 400. Ranking falls back to TF-IDF on any exception, so this
-  degraded shortlists silently — `matching_complete` now carries
-  `ranking_method`.
-- **Deploy:** 100% Google Cloud Run (both services) + Cloud SQL + Artifact
-  Registry. No Railway/Vercel — DEPLOYMENT.md is stale, ignore it.
-- **No Alembic.** `create_all` only adds new *tables*, never new columns on
-  existing ones. Don't add columns to existing models without a manual
-  `ALTER TABLE` on the live Cloud SQL DB — prefer stashing new state inside an
-  existing JSON column instead (see `AgentRun.state_json` below).
+  `LLM_BACKEND=vertex` plus a GCP project and ADC is an optional second path;
+  it exists because the free key tier rate-limits partway through a drive.
 
-## Deploy — none, deliberately
-**There is no hosted instance any more.** A demo on trial credits stops working
-when they lapse, and a dead link on a portfolio project is worse than no link:
-the artifact is this repo plus a demo video in the README. Don't re-add a
-"Live:" URL.
+**`ORCHESTRATOR_MODEL` is `gemini-3.5-flash`, not `gemini-2.5-flash`.** The loop
+was built on 2.5-flash, but that model is retired on this endpoint and 404s for
+newer keys. Don't "restore" it.
 
-The commands below are kept as a record of how it *was* deployed, and because
-Cloud Run is still a reasonable target if a deploy is ever wanted again.
+**No hosted instance, deliberately.** The artifact is this repo plus a demo
+video. Don't add a "Live:" URL.
 
-### Historical — GCP project `placement-agent-22587`, region `us-central1`
-| Service | URL |
-|---|---|
-| `placement-backend` | https://placement-backend-891885517174.us-central1.run.app |
-| `placement-frontend` | https://placement-frontend-891885517174.us-central1.run.app |
+**No Alembic.** `create_all` adds new *tables* only, never new columns on
+existing ones. Put new state inside an existing JSON column instead — see
+`AgentRun.state_json`, which is where both `kind` and a failed run's `error`
+live for exactly this reason.
 
-Images: `us-central1-docker.pkg.dev/placement-agent-22587/placement-repo/{backend,frontend}:vN` (increment N each deploy).
-
+## Running it
 ```bash
-# Backend
-gcloud builds submit --tag=us-central1-docker.pkg.dev/placement-agent-22587/placement-repo/backend:vN --region=us-central1 backend/
-gcloud run deploy placement-backend --image=us-central1-docker.pkg.dev/placement-agent-22587/placement-repo/backend:vN --region=us-central1
-
-# Frontend — NEXT_PUBLIC_* vars are baked in at BUILD time (Next.js inlines
-# them), not runtime env. Omitting the substitutions ships a frontend that
-# silently can't reach the API.
-gcloud builds submit --config=frontend/cloudbuild.yaml --region=us-central1 \
-  --substitutions=_API_URL=https://placement-backend-891885517174.us-central1.run.app,_WS_URL=wss://placement-backend-891885517174.us-central1.run.app,_IMAGE=us-central1-docker.pkg.dev/placement-agent-22587/placement-repo/frontend:vN \
-  frontend/
-gcloud run deploy placement-frontend --image=us-central1-docker.pkg.dev/placement-agent-22587/placement-repo/frontend:vN --region=us-central1
+docker compose up --build
+docker compose exec api python -m seed.seed_db
 ```
+Frontend `localhost:3000`, API `localhost:8000`, Postgres host port **5433**
+(not 5432 — that collides with any other Postgres you run).
 
-`gcloud run deploy` is treated as a confirm-first action by the harness — expect
-to ask before running it, even mid-session.
+**Code changes need `docker compose up -d --build <service>`.** A plain restart
+does not pick them up: the image COPYs the source rather than mounting it.
 
-**Local dev:** Docker Desktop *is* installed here (an earlier note in this file
-claimed otherwise and was wrong) — `docker compose up --build` from the repo root
-brings up Postgres, API and frontend together. There is no local Postgres outside
-that.
+`docker-compose.override.yml` is gitignored and is what puts this machine on
+the optional Vertex path by mounting the host's ADC file into the container.
 
-To run only the frontend against a backend elsewhere, use **port 3000 or 3001**
-(`CORS_ORIGINS` in `backend/app/main.py` is a fixed list):
-```bash
-cd frontend && NEXT_PUBLIC_API_URL=https://placement-backend-891885517174.us-central1.run.app \
-  NEXT_PUBLIC_WS_URL=wss://placement-backend-891885517174.us-central1.run.app npx next dev -p 3000
-```
-
-**Credentials (seeded):**
+**Seeded credentials:**
 | Role | Email | Password |
 |---|---|---|
 | TPO | tpo@college.edu | tpo@123 |
@@ -113,98 +61,78 @@ cd frontend && NEXT_PUBLIC_API_URL=https://placement-backend-891885517174.us-cen
 | Company | hr@tcs.com | company@123 |
 | Panel | panel@company.com | panel@123 |
 
-## Architecture — the agentic core
-`orchestrator.py` is one generic agent-loop engine (Gemini function calling
-over Gemini Enterprise) dispatched by a **`kind`** string stored in `AgentRun.state_json`
-(not a DB column — no migration path, see above):
-- **`"shortlist"`** (`tools.py`): `get_drive_context → parse_jd →
-  check_eligibility → rank_candidates → ask_human`. Model picks the tool and
-  args each step; two different drives produce two different traces.
-- **Scheduling is NOT an agent** (`schedule_tools.schedule_round`): same closed
-  loop — propose → validate → re-plan → commit — in plain Python. The model was
-  only ever choosing between "exclude the contested panel/room" and "widen the
-  window", so that is written out. ~200ms and repeatable, against 15s+ and a
-  possible rate-limit failure. `validate` still checks against *every committed
-  slot across every drive and round*, which is the part that matters and which
-  the allocator cannot do alone. Removed the `"schedule"` orchestrator profile
-  2026-09-06; don't reinstate it.
+## Architecture
 
-`ask_human` is a tool, not a hardcoded gate — calling it pauses the run and
-persists full state to the `agent_runs` Postgres table, so it survives Cloud
-Run container recycling (verified: killed the container mid-pause, resumed
-correctly). Resuming injects the human's answer as a `functionResponse` and
-continues the loop.
+**The agent loop** (`orchestrator.py`) is one generic Gemini function-calling
+engine. One profile: `shortlist` (`tools.py`) — `get_drive_context → parse_jd →
+check_eligibility → rank_candidates → select_candidates → ask_human`. The model
+picks the tool and its arguments each step, so two drives produce two traces.
 
-**Auditor** (`auditor_agent.py`): a second, independent Gemini call sanity-
-checks the shortlist's actual numbers (not the orchestrator's narration of
-them) right before `ask_human` fires. Degrades to `"clear"` on failure rather
-than blocking.
+**`ask_human` is a tool, not a hardcoded gate.** Calling it serialises the whole
+run to the `agent_runs` table before yielding, so the pause survives the process
+holding it. Resuming injects the answer back as a `functionResponse`.
 
-**Analyst Agent** (`analyst_agent.py`, `POST /api/analytics/ask`): TPO types a
-free-text question → model generates SQL → Python validates it (single
-SELECT only, table allowlist, PII column blocklist, no `SELECT *`, LIMIT 100)
-→ executes → second model call summarizes the real returned rows. TPO-only.
+**Scheduling is not an agent** (`schedule_tools.schedule_round`). Same closed
+loop — propose → validate → re-plan → commit — in plain Python, ~200ms and
+repeatable. `propose` is FCFS; `validate` is the part that matters, checking a
+proposal against *every committed slot across every drive and round*, which the
+allocator cannot do because it only sees the students in front of it. Re-planning
+excludes contested resources or widens the window, bounded by `_MAX_ATTEMPTS`.
+Don't reinstate a `schedule` orchestrator profile.
 
-**`vertex_json.py`** (shared one-shot JSON helper — Auditor, Analyst SQL/
-summary, Panel agent prep/debrief): `gemini-2.5-flash` is a **thinking**
-model and can emit a `"thought": true` part before the real answer part —
-always scan all parts and skip thought parts, never assume `parts[0]` is the
-answer. (This was a real bug, fixed 2026-08-27.)
+**Auditor** (`auditor_agent.py`): an independent second model call that checks
+the shortlist's real numbers, not the orchestrator's narration of them, before
+`ask_human` fires. Degrades to `"clear"` rather than blocking.
 
-**Trace UI**: `AgentTrace` rows (`kind`: thought/tool_call/observation/
-decision/violation/ask_human/audit) render generically regardless of which
-`kind` of run produced them — adding a new agent profile needs **zero**
-frontend trace-viewer changes. The agent dock (`/api/drives/agent-runs/live`)
-surfaces any RUNNING/PAUSED run across all drives the same way.
+**Analyst** (`analyst_agent.py`, `POST /api/analytics/ask`): question → generated
+SQL → **validated in Python** (single SELECT, table allowlist, PII column
+blocklist, no `SELECT *`, forced LIMIT) → read-only execution → answered from the
+rows returned. Counting people means `COUNT(DISTINCT student_id)`; the per-drive
+tables hold one row per student per drive.
 
-## Scope already decided — don't re-litigate
-**Built:** agentic orchestrator + tool registry (two profiles: `shortlist`,
-`schedule`), durable `ask_human`, Auditor, Analyst Agent, Onyx free-text
-sidebar, scheduling closed loop with cross-round validation.
-**Built then removed (2026-09-04):** agent-to-agent schedule negotiation and
-the Onyx supervisor profile that dispatched it. It burned 12–18 model steps
-plus a Company Agent call to reach the schedule the plain `schedule` agent
-reaches in ~4, and by design it could not commit anything — so nothing
-depended on it. Don't rebuild it; the `schedule` profile *is* the scheduler.
-**Never built** (still fine ideas): NL constraint steering, preference memory,
-autonomous night job, Digital Twin no-show simulation, reflection loop,
-self-proposed eligibility rules.
+**Onyx sidebar** (`onyx_chat.py`): free-text assistant with one tool,
+`ask_analyst`. No data access of its own.
+
+**Shortlist by instruction** (`shortlist_selector.py`): plain English → a filter
+spec → **applied in Python**. The model never sees candidates and never names a
+student. Actions are set operations on a filter describing who *remains*:
+`replace`, `add` (scope: not yet selected, so "10 more" means the next ten),
+`keep` (scope: already selected). There is deliberately no "remove" — it reads
+naturally and inverts in code.
+
+**Where the model is allowed to decide:** which tool to call, how to read a
+sentence, and how to phrase prose. Never a number that reaches a screen, who is
+eligible, or who gets scheduled. Those are SQL and Python, because they have to
+be auditable and repeatable.
+
+**Analytics are deterministic SQL.** No LLM computes a figure that gets
+displayed.
 
 ## Gotchas — do not undo
-- `bcrypt==4.0.1` pinned (5.x breaks passlib).
-- SQLAlchemy reserves `metadata` — models use `extra_data` instead.
-- Résumés: `GET /api/students/{id}/resume`, JWT via `?token=` query param
-  (plain `<a href>` can't set headers). No public `/uploads` static mount.
-- WebSocket (`/ws/*`): requires `?token=<jwt>`, checked before `accept()`.
-- `_render_template` (notifications) uses `.format_map(defaultdict(lambda:"-"))`
-  — don't revert to `.format(**data)`, it raises `KeyError` on missing fields.
-- **Never pass a `/`-leading value to `gcloud` from Git Bash.** MSYS rewrites
-  it to a Windows path *before gcloud sees it*, silently. This is why
-  `UPLOAD_DIR` sat at `C:/Users/mouni/AppData/Local/Temp/uploads` on the live
-  Linux container for a week: the 2026-08-27 "fix" ran
-  `--update-env-vars UPLOAD_DIR=/tmp/uploads` from Git Bash, which mangled it
-  on the way out and reported success. Genuinely fixed 2026-09-04 by running
-  the same command from PowerShell. Use PowerShell (or `MSYS_NO_PATHCONV=1`)
-  for any gcloud flag whose value starts with `/`, and always read the value
-  back off the serving revision afterwards — the deploy exits 0 either way.
-- Embeddings: `gemini-embedding-001` via direct `httpx` REST call, not
-  langchain (`langchain-google-genai` hangs 60s→504 on every model). TF-IDF
-  is kept as a real fallback, not the only path.
-
-## Q&A cheat sheet (interviews, reviews, demos)
-| They ask | Say |
-|---|---|
-| "Is this actually agentic, or a workflow?" | Run the same drive twice with different constraints — two different execution traces. The model picks the tool and its arguments each step; here's the trace. |
-| "What do the sub-agents do?" | Specialists with their own tools/prompts. The Auditor's whole job is to disagree with the others — it checks the shortlist's real numbers before a human signs off. |
-| "What happens when it gets something wrong?" | Watch the scheduler: it proposes, validates against the whole calendar, and re-plans on its own when it finds a conflict — then tells you what it traded off. |
-| "Where's the human in the loop?" | `ask_human` is a tool the agent chooses to call, not a hardcoded gate — and it's a durable pause: the run survives a container restart. |
-| "Is it production-grade?" | JWT auth, 4 roles, WebSocket auth, authenticated résumés, deployed on Cloud Run + Cloud SQL + Gemini Enterprise Agent Platform. |
-| "Can it answer something you didn't pre-build a screen for?" | The Analyst Agent — ask it any placement-data question, it writes the SQL live, shows it to you, runs it read-only, and answers from the real rows. |
+- `bcrypt==4.0.1` pinned; 5.x breaks passlib.
+- SQLAlchemy reserves `metadata`; models use `extra_data`.
+- Résumés: `GET /api/students/{id}/resume`, JWT via `?token=` query param — a
+  plain `<a href>` cannot set headers. No public `/uploads` mount.
+- WebSockets (`/ws/*`) require `?token=<jwt>`, checked before `accept()`.
+- `_render_template` uses `.format_map(defaultdict(lambda: "-"))`. Reverting to
+  `.format(**data)` raises `KeyError` on any missing field.
+- Embeddings go over direct `httpx` REST, not LangChain, which hangs 60s then
+  504s. TF-IDF is a real fallback, and `matching_complete` records
+  `ranking_method` so a silent downgrade is visible.
+- `MAX_EMBED_BATCH` is 100 — `batchEmbedContents` rejects more. Ranking falls
+  back to TF-IDF on any exception, so exceeding it degrades results silently.
+- **Background tasks must open their own DB session** via
+  `async_session_factory`. A task closing over the request's `db` pins that
+  connection after FastAPI closes the session and can exhaust the pool, which
+  surfaces as unrelated pages timing out.
+- `gemini-2.5-flash` is a thinking model: scan all parts and skip `"thought"`
+  parts. Never assume `parts[0]` is the answer.
+- SendGrid and Twilio keys are optional. Without them notifications are still
+  created and shown; only delivery fails, and it fails loudly in the logs.
+- SQL echo is off unless `SQL_ECHO=true`.
 
 ## Doc map
-- `README.md` — the repo's front door: the two hard problems, architecture,
-  setup, and an explicit limitations section. Keep it honest.
-- `MY_SYSTEM_DESIGN.md` / `SYSTEM_DESIGN.md` / `problem statement.md` exist on
-  this machine but are **untracked and gitignored** — they are stale and were
-  deliberately kept out of the repo. Don't cite them as if a cloner has them.
-- Everything else that used to be in AGENTS.md / AGENTIC_OVERHAUL.md is above.
+- `README.md` — the front door: the hard problems, architecture, setup, and an
+  explicit limitations section. Keep it honest.
+- `MY_SYSTEM_DESIGN.md`, `SYSTEM_DESIGN.md`, `problem statement.md` exist on
+  this machine but are untracked and gitignored. Stale; don't cite them.
