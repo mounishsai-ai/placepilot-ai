@@ -685,15 +685,19 @@ function ScheduleRoundModal({
       const roundId: string = (roundRes.data as { id: string }).id;
 
       // Step 2: start the scheduling agent (propose \u2192 validate \u2192 re-plan \u2192 commit)
-      await scheduleAPI.runAgent(roundId);
-
-      // Stay on this page. The row is the progress indicator: it moves to
-      // "Confirm Schedule" by itself once the agent commits, because the list
-      // refetches every few seconds. Navigating away — to the trace, or to the
-      // schedule tab — takes the reader off the one screen that shows the
-      // drive advancing. The old copy sent them to the agent dock, which was
-      // deleted deliberately, so the modal closed onto nothing at all.
-      toast.success("Scheduling agent started — this drive will move to Confirm Schedule.");
+      // Scheduling is synchronous now and returns what it actually did, so
+      // say that rather than "started". Partial results are the normal case:
+      // a window rarely fits everyone, and the count that did not fit is the
+      // number the TPO needs before confirming.
+      const res = await scheduleAPI.runAgent(roundId);
+      const { scheduled, unscheduled, total_students: total } = (res.data ?? {}) as {
+        scheduled?: number; unscheduled?: number; total_students?: number;
+      };
+      toast.success(
+        typeof scheduled === "number"
+          ? `Scheduled ${scheduled} of ${total} students${unscheduled ? ` — ${unscheduled} did not fit` : ""}.`
+          : "Schedule created."
+      );
       onScheduled();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;

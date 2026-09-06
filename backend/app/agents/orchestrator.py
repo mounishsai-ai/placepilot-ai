@@ -25,9 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.models import AgentRun, AgentRunStatus, AgentTrace, PlacementDrive, DriveStatus
 from app.agents.tools import ToolContext, TOOL_DECLARATIONS, TOOL_EXECUTORS
-from app.agents.schedule_tools import (
-    ScheduleContext, SCHEDULE_TOOL_DECLARATIONS, SCHEDULE_TOOL_EXECUTORS,
-)
 from app.agents.auditor_agent import audit_pipeline
 from app.agents.gemini_transport import generate_content_target, orchestrator_model
 from app.api.websocket import emit_agent_event
@@ -127,11 +124,6 @@ _PROFILES = {
         "system_prompt": ORCHESTRATOR_SYSTEM_PROMPT,
         "tools": TOOL_DECLARATIONS,
         "executors": TOOL_EXECUTORS,
-    },
-    "schedule": {
-        "system_prompt": SCHEDULING_SYSTEM_PROMPT,
-        "tools": SCHEDULE_TOOL_DECLARATIONS,
-        "executors": SCHEDULE_TOOL_EXECUTORS,
     },
 }
 
@@ -269,10 +261,6 @@ async def create_run(
 
 
 def _build_ctx(db: AsyncSession, drive_id: str, kind: str, round_id: str | None):
-    if kind == "schedule":
-        if not round_id:
-            raise ValueError(f"{kind} run has no round_id in state_json")
-        return ScheduleContext(db, drive_id, round_id)
     return ToolContext(db, drive_id)
 
 
@@ -286,7 +274,6 @@ async def execute_run(db: AsyncSession, run_id: str, drive_id: str) -> AgentRun:
     round_id = (run.state_json or {}).get("round_id")
     begin_text = (
         f"Begin building the interview schedule for round {round_id}."
-        if kind == "schedule" else f"Begin processing drive {drive_id}."
     )
     contents = [{"role": "user", "parts": [{"text": begin_text}]}]
     ctx = _build_ctx(db, drive_id, kind, round_id)
@@ -342,7 +329,7 @@ def _snapshot_state(run: AgentRun, contents: list[dict]) -> dict:
 
 
 async def _run_loop(
-    db: AsyncSession, run: AgentRun, ctx: ToolContext | ScheduleContext,
+    db: AsyncSession, run: AgentRun, ctx: ToolContext,
     contents: list[dict], kind: str = "shortlist",
 ) -> None:
     """Thin wrapper: every exception inside the loop must end in the run
@@ -399,7 +386,7 @@ def _mark_failed(run: AgentRun, reason: str) -> None:
 
 
 async def _run_loop_inner(
-    db: AsyncSession, run: AgentRun, ctx: ToolContext | ScheduleContext,
+    db: AsyncSession, run: AgentRun, ctx: ToolContext,
     contents: list[dict], kind: str = "shortlist",
 ) -> None:
     profile = _PROFILES[kind]
@@ -484,7 +471,7 @@ async def _run_loop_inner(
                 # calls ask_human early (e.g. the JD had no text), would
                 # otherwise hand the auditor an all-zero summary that trips
                 # its own "nothing was filtered" checks for real reasons. The
-                # scheduling profile's ScheduleContext has no match_results at
+                # some contexts carry no match_results at
                 # all — it audits itself via validate_schedule instead.
                 if kind == "shortlist" and ctx.match_results:
                     audit_summary = {

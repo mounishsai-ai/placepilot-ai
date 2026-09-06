@@ -69,22 +69,32 @@ same panel member or room.
 The fix is a closed loop rather than a better allocator:
 
 ```
-get_schedule_context → propose_schedule → validate_schedule
-                            ↑                    │
-                            └──── re-plan ───────┘   (on violation)
-                                                 │
-                                                 ↓  (zero violations)
-                                          commit_schedule
+load context → propose → validate ──┐
+                  ↑                 │  violations: drop the contested
+                  └──── re-plan ────┘  panel/room, or widen the window
+                                    │
+                                    ↓  zero violations
+                                 commit
 ```
 
-`propose_schedule` still uses first-come-first-served internally — that part is fine,
-and it is fast. What changed is that its output is now a *proposal*, not a result.
-`validate_schedule` checks that proposal against every slot already committed across
-every drive and every round. On a violation the model reads which panel or room
-clashed and calls `propose_schedule` again — excluding that resource, or widening the
-window — then re-validates. Nothing is written until validation returns clean.
+`propose` is first-come-first-served and that part is fine — it is fast, and its
+output is a *proposal*, not a result. `validate` checks that proposal against
+every slot already committed across every drive and every round, which the
+allocator cannot do because it only ever sees the students in front of it. On a
+violation the contested resource is excluded and the proposal is rebuilt; if
+everyone fits but the window is tight, the window widens in fixed steps.
+Nothing is written until validation returns clean.
 
-The model chooses the fix itself; the recovery strategy is not coded as a branch.
+**This deliberately does not use a model.** An earlier version ran the same loop
+as a Gemini agent, with the model choosing what to retry after each failure.
+Measured against each other on the same round, the model reached the same window
+in over fifteen seconds and then stopped to ask a human; the loop below reaches
+it in ~200ms, gives the same answer every time, and cannot fail on a rate limit.
+The model was never allocating anything — it was picking between "drop that
+panel" and "extend the window", which is a closed set worth writing out.
+
+The judgement that remains is a human's: the schedule is committed as *pending*,
+and a TPO confirms it.
 
 ## Architecture
 
@@ -98,17 +108,16 @@ entry, not new engine code.
 | Profile | Tools | Job |
 |---|---|---|
 | `shortlist` | `get_drive_context`, `parse_jd`, `check_eligibility`, `rank_candidates`, `select_candidates`, `ask_human` | JD → ranked, human-approved shortlist |
-| `schedule` | `get_schedule_context`, `propose_schedule`, `validate_schedule`, `commit_schedule`, `ask_human` | Conflict-free interview schedule |
 
-Both profiles run on the same engine function. The difference between them is
-entirely data — a system prompt and a list of tools — which is why adding a third
-would not touch the loop itself.
+A profile is data — a system prompt and a list of tools — so adding one does not
+touch the loop itself. There is one, because scheduling was moved to plain code
+once it was clear the model there was only choosing between two fixed retries.
 
-An earlier version added two more profiles, in which an agent acting for the TPO
-negotiated the schedule with a second agent acting for the company. It was
-removed: it spent 12–18 model steps and an extra judgement call arriving at the
-schedule the `schedule` agent above reaches in about four, and by design it could
-not commit anything, so nothing depended on it.
+Two other profiles existed and were removed. One had an agent acting for the TPO
+negotiate the schedule with a second agent acting for the company: 12–18 model
+steps and an extra judgement call to reach a schedule plain code now produces in
+milliseconds, and by design it could not commit anything, so nothing depended on
+it. The scheduling profile went the same way, for the same reason.
 
 ### One-shot specialists (single structured judgment)
 

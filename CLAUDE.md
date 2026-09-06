@@ -120,15 +120,14 @@ over Gemini Enterprise) dispatched by a **`kind`** string stored in `AgentRun.st
 - **`"shortlist"`** (`tools.py`): `get_drive_context → parse_jd →
   check_eligibility → rank_candidates → ask_human`. Model picks the tool and
   args each step; two different drives produce two different traces.
-- **`"schedule"`** (`schedule_tools.py`): `get_schedule_context →
-  propose_schedule → validate_schedule → (re-plan on violation) →
-  commit_schedule`. **The closed loop**: `validate_schedule` checks the
-  proposal against *every other committed slot, across every drive/round* —
-  the old deterministic `auto-schedule` endpoint (removed) only ever checked
-  conflicts within its own batch, so cross-drive panel/room double-bookings
-  went undetected. The model fixes a violation itself (exclude the named
-  panel/room id, or extend the window) and re-validates; only commits on zero
-  violations.
+- **Scheduling is NOT an agent** (`schedule_tools.schedule_round`): same closed
+  loop — propose → validate → re-plan → commit — in plain Python. The model was
+  only ever choosing between "exclude the contested panel/room" and "widen the
+  window", so that is written out. ~200ms and repeatable, against 15s+ and a
+  possible rate-limit failure. `validate` still checks against *every committed
+  slot across every drive and round*, which is the part that matters and which
+  the allocator cannot do alone. Removed the `"schedule"` orchestrator profile
+  2026-09-06; don't reinstate it.
 
 `ask_human` is a tool, not a hardcoded gate — calling it pauses the run and
 persists full state to the `agent_runs` Postgres table, so it survives Cloud
