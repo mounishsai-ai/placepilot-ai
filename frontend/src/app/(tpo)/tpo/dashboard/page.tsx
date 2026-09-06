@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Briefcase, Award, TrendingUp,
   Play, Zap, Search, Check, Mail,
-  ShieldAlert, History, Bot, UserCheck,
+  ShieldAlert, History, Bot, UserCheck, Trash2,
 } from "lucide-react";
 
 import { formatDistanceToNow } from "date-fns";
@@ -89,6 +89,23 @@ export default function TPODashboard() {
   const [exceptionSearch, setExceptionSearch] = useState("");
   const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
   const [notices, setNotices] = useState<Record<string, unknown>[]>([]);
+
+  // Removed from the list first, then from the server. A notice is a read
+  // message, not state anything else depends on, so waiting on a round trip
+  // to redraw would be the only thing that felt slow here. On failure the
+  // list is refetched, which puts it back.
+  const deleteNotice = async (id: string, subject: string) => {
+    if (!confirm(`Delete "${subject}"? This cannot be undone.`)) return;
+    setNotices((prev) => prev.filter((x) => (x.id as string) !== id));
+    try {
+      await noticesAPI.remove(id);
+      toast.success("Notice deleted");
+    } catch {
+      toast.error("Could not delete that notice");
+      const res = await noticesAPI.list();
+      setNotices(res.data);
+    }
+  };
   const [auditTrail, setAuditTrail] = useState<Record<string, unknown>[]>([]);
   const [exceptionsLoading, setExceptionsLoading] = useState(true);
 
@@ -263,9 +280,20 @@ export default function TPODashboard() {
                     >
                       <div className="flex items-center justify-between mb-1 gap-2">
                         <span className="font-medium text-sm truncate">{n.subject as string}</span>
-                        <span className="ct-mono text-[10px] flex-shrink-0" style={{ color: "var(--faint)" }}>
-                          {formatDistanceToNow(new Date(n.created_at as string), { addSuffix: true })}
-                        </span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="ct-mono text-[10px]" style={{ color: "var(--faint)" }}>
+                            {formatDistanceToNow(new Date(n.created_at as string), { addSuffix: true })}
+                          </span>
+                          <button
+                            onClick={() => deleteNotice(n.id as string, n.subject as string)}
+                            title="Delete this notice"
+                            aria-label={`Delete notice: ${n.subject as string}`}
+                            className="transition-opacity hover:opacity-100 opacity-45"
+                            style={{ color: "var(--ash)" }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-xs mb-1.5" style={{ color: "var(--ash)" }}>{n.message as string}</p>
                       <div className="ct-mono text-[10px]" style={{ color: "var(--jade-d)" }}>

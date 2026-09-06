@@ -112,6 +112,8 @@ export const noticesAPI = {
     api.post("/api/notices", data),
   /** Company side — this company's own sent history. */
   sent: () => api.get("/api/notices/sent"),
+  /** TPO may delete any; a company only the ones it sent. */
+  remove: (id: string) => api.delete(`/api/notices/${id}`),
 };
 
 // ─── Schedule ─────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mail, Inbox } from "lucide-react";
+import { Send, Mail, Inbox, Trash2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { drivesAPI, noticesAPI } from "@/lib/api";
 import toast from "react-hot-toast";
@@ -30,6 +30,22 @@ interface SentNotice {
 export default function CompanyNotices() {
   const [drives, setDrives] = useState<Drive[]>([]);
   const [sent, setSent] = useState<SentNotice[]>([]);
+
+  // The server allows a company to delete only its own notices, so this is a
+  // sender retracting their own message from the office's inbox — not a way to
+  // reach anyone else's correspondence.
+  const deleteNotice = async (id: string, subject: string) => {
+    if (!confirm(`Delete "${subject}"? The placement office will no longer see it.`)) return;
+    setSent((prev) => prev.filter((x) => x.id !== id));
+    try {
+      await noticesAPI.remove(id);
+      toast.success("Notice deleted");
+    } catch {
+      toast.error("Could not delete that notice");
+      const res = await noticesAPI.sent();
+      setSent(res.data);
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
@@ -156,9 +172,20 @@ export default function CompanyNotices() {
                 >
                   <div className="flex items-center justify-between mb-1 gap-2">
                     <span className="font-medium text-sm">{n.subject}</span>
-                    <span className="ct-mono text-[10px] flex-shrink-0" style={{ color: "var(--faint)" }}>
-                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
-                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="ct-mono text-[10px]" style={{ color: "var(--faint)" }}>
+                        {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                      </span>
+                      <button
+                        onClick={() => deleteNotice(n.id, n.subject)}
+                        title="Delete this notice"
+                        aria-label={`Delete notice: ${n.subject}`}
+                        className="transition-opacity hover:opacity-100 opacity-45"
+                        style={{ color: "var(--ash)" }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs mb-1.5" style={{ color: "var(--ash)" }}>{n.message}</p>
                   {n.drive_title && (

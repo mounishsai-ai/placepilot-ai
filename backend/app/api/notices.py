@@ -115,3 +115,32 @@ async def list_sent_notices(
         }
         for n in notices
     ]
+
+
+@router.delete("/{notice_id}")
+async def delete_notice(
+    notice_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.TPO, UserRole.COMPANY)),
+):
+    """Delete one notice.
+
+    Both sides can clear their own view of this, but not each other's history:
+    the TPO is the recipient office and may remove anything in its inbox, while
+    a company may only delete notices it sent itself. Without that second check
+    any company account could delete another company's correspondence, since
+    notice ids are the only thing identifying them.
+    """
+    result = await db.execute(select(Notice).where(Notice.id == notice_id))
+    notice = result.scalar_one_or_none()
+    if not notice:
+        raise HTTPException(status_code=404, detail="Notice not found")
+
+    if current_user.role == UserRole.COMPANY:
+        company = await _current_company(current_user, db)
+        if notice.company_id != company.id:
+            raise HTTPException(status_code=403, detail="You can only delete notices you sent")
+
+    await db.delete(notice)
+    await db.commit()
+    return {"message": "Notice deleted"}
