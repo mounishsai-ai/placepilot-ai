@@ -121,6 +121,23 @@ async def _run_pipeline_bg(drive_id: str):
 
             state = await run_placement_pipeline(drive_id, drive.jd_text, students, rules)
 
+            # A halted run has nothing to approve, so it must not look like it
+            # does. The JD gate stops the graph before any student is ranked;
+            # advancing to SHORTLIST_PENDING anyway left the drive sitting in
+            # "awaiting approval" with an empty shortlist behind it.
+            if state.get("error"):
+                logger.warning(f"Pipeline halted for drive {drive_id}: {state['error']}")
+                db.add(AgentEvent(
+                    drive_id=drive_id, event_type="pipeline_error",
+                    agent_name="supervisor", payload={"error": state["error"][:500]},
+                ))
+                await db.commit()
+                await emit_agent_event(
+                    "pipeline_error", {"error": state["error"][:500]},
+                    drive_id=drive_id, agent_name="supervisor",
+                )
+                return
+
             # Persist eligibility results
             for r in state.get("eligibility_results", []):
                 er = EligibilityResult(

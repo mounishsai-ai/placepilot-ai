@@ -23,7 +23,12 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     ports:
-      - "5432:5432"
+      # 5433 on the host, not 5432: anyone who already runs Postgres -- locally
+      # or in another container -- would otherwise get "port is already
+      # allocated" and the whole stack fails to start. The API does not use
+      # this mapping at all; it reaches the database over the compose network.
+      # Connect a GUI or psql to localhost:5433 if you want to look inside.
+      - "5433:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
