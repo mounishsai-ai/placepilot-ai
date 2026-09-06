@@ -89,6 +89,23 @@ def resolve_backend() -> str:
     return "vertex"
 
 
+# ─── Model selection ─────────────────────────────────────────────────────────
+
+def orchestrator_model() -> str:
+    """The function-calling model to use, for whichever backend is resolved.
+
+    These are not interchangeable. gemini-2.5-flash is the model the agent loop
+    was built and verified against, but it is retired on AI Studio and 404s for
+    any key issued after its cutoff — so the key path needs its own model, and
+    hardcoding either one breaks the other deployment.
+    """
+    return (
+        settings.AISTUDIO_ORCHESTRATOR_MODEL
+        if resolve_backend() == "aistudio"
+        else settings.VERTEX_ORCHESTRATOR_MODEL
+    )
+
+
 # ─── generateContent ─────────────────────────────────────────────────────────
 
 def generate_content_target(model: str) -> tuple[str, dict[str, str]]:

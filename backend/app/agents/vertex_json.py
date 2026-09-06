@@ -11,12 +11,7 @@ import httpx
 from loguru import logger
 
 from app.config import settings
-from app.agents.vertex_auth import get_vertex_access_token
-
-VERTEX_GENERATE_URL = (
-    "https://aiplatform.googleapis.com/v1/projects/{project}"
-    "/locations/global/publishers/google/models/{model}:generateContent"
-)
+from app.agents.gemini_transport import generate_content_target, orchestrator_model
 
 # Same transient-error retry as orchestrator.py's _call_gemini — a 429/503
 # here previously killed the Analyst/Auditor/Panel call outright.
@@ -30,10 +25,7 @@ async def generate_json(system_prompt: str, user_prompt: str, *, caller: str = "
     fences, but a fence still shows up occasionally — the guard below is
     cheaper than a retry.
     """
-    token = get_vertex_access_token()
-    url = VERTEX_GENERATE_URL.format(
-        project=settings.GCP_PROJECT_ID, model=settings.VERTEX_ORCHESTRATOR_MODEL
-    )
+    url, headers = generate_content_target(orchestrator_model())
     payload = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
@@ -41,7 +33,7 @@ async def generate_json(system_prompt: str, user_prompt: str, *, caller: str = "
     }
     async with httpx.AsyncClient(timeout=60) as client:
         for attempt, delay in enumerate([*_RETRY_DELAYS_S, None]):
-            resp = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json=payload)
+            resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code not in (429, 503) or delay is None:
                 resp.raise_for_status()
                 data = resp.json()

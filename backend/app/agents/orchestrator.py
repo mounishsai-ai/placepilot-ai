@@ -29,14 +29,9 @@ from app.agents.schedule_tools import (
     ScheduleContext, SCHEDULE_TOOL_DECLARATIONS, SCHEDULE_TOOL_EXECUTORS,
 )
 from app.agents.auditor_agent import audit_pipeline
-from app.agents.vertex_auth import get_vertex_access_token
+from app.agents.gemini_transport import generate_content_target, orchestrator_model
 from app.api.websocket import emit_agent_event
 from loguru import logger
-
-VERTEX_GENERATE_URL = (
-    "https://aiplatform.googleapis.com/v1/projects/{project}"
-    "/locations/global/publishers/google/models/{model}:generateContent"
-)
 
 ORCHESTRATOR_SYSTEM_PROMPT = """You are the orchestrator for a college placement drive.
 
@@ -150,10 +145,7 @@ _RETRY_DELAYS_S = [5, 15]
 
 
 async def _call_gemini(contents: list[dict], system_prompt: str, tool_declarations: list[dict]) -> dict:
-    token = get_vertex_access_token()
-    url = VERTEX_GENERATE_URL.format(
-        project=settings.GCP_PROJECT_ID, model=settings.VERTEX_ORCHESTRATOR_MODEL,
-    )
+    url, headers = generate_content_target(orchestrator_model())
     payload = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": contents,
@@ -161,12 +153,12 @@ async def _call_gemini(contents: list[dict], system_prompt: str, tool_declaratio
     }
     async with httpx.AsyncClient(timeout=60) as client:
         for attempt, delay in enumerate([*_RETRY_DELAYS_S, None]):
-            resp = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json=payload)
+            resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code not in (429, 503) or delay is None:
                 resp.raise_for_status()
                 return resp.json()
             logger.warning(
-                f"Vertex {resp.status_code}, retrying in {delay}s (attempt {attempt + 1}/{len(_RETRY_DELAYS_S)})"
+                f"Gemini {resp.status_code}, retrying in {delay}s (attempt {attempt + 1}/{len(_RETRY_DELAYS_S)})"
             )
             await asyncio.sleep(delay)
 

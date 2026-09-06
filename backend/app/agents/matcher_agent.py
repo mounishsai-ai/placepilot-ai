@@ -11,40 +11,21 @@ import math
 from typing import Any
 from collections import Counter
 import chromadb
-import httpx
 from chromadb.config import Settings as ChromaSettings
 from app.config import settings
 from app.agents.jd_analyst import explain_match
-from app.agents.vertex_auth import get_vertex_access_token
+from app.agents.gemini_transport import embed_texts
 from loguru import logger
-
-VERTEX_EMBED_URL = (
-    "https://{location}-aiplatform.googleapis.com/v1/projects/{project}"
-    "/locations/{location}/publishers/google/models/{model}:predict"
-)
 
 
 async def _embed_texts_rest(texts: list[str], task_type: str) -> list[list[float]]:
-    """Embed a batch of texts via Vertex AI's :predict endpoint.
+    """Embed a batch of texts, whichever Gemini backend is configured.
 
     task_type must be RETRIEVAL_DOCUMENT for indexed content (student profiles)
     or RETRIEVAL_QUERY for the search query (the JD) — matching is asymmetric.
+    Raises on failure; the caller decides whether to fall back to TF-IDF.
     """
-    model = settings.EMBEDDING_MODEL
-    url = VERTEX_EMBED_URL.format(
-        location=settings.VERTEX_EMBEDDING_LOCATION,
-        project=settings.GCP_PROJECT_ID,
-        model=model,
-    )
-    token = get_vertex_access_token()
-    payload = {
-        "instances": [{"content": t, "task_type": task_type} for t in texts]
-    }
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        return [p["embeddings"]["values"] for p in data["predictions"]]
+    return await embed_texts(texts, task_type)
 
 
 def get_chroma_client():
