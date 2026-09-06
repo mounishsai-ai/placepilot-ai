@@ -205,6 +205,35 @@ Provide a JSON response with:
 
 # ─── Is this actually a job description? ─────────────────────────────────────
 
+# Below this, text cannot be a job description, and asking a model to confirm
+# that costs ~9.6s and a call against the daily quota. A real posting carries a
+# role, skills and eligibility criteria; it does not fit in a tweet. These
+# floors are deliberately far below any genuine JD — the shortest real one in
+# testing was ~380 characters — so this rejects "abc" and "how are you" without
+# ever rejecting something a recruiter actually sent.
+_MIN_JD_CHARS = 80
+_MIN_JD_WORDS = 15
+
+
+def jd_text_is_plausible(text: str | None) -> tuple[bool, str]:
+    """Cheap structural check, run BEFORE any model call.
+
+    jd_is_usable() below is the real gate and still runs after parsing; this
+    only catches input that is obviously not a job description, so the common
+    case of someone pasting a stray word is answered instantly and for free
+    instead of after a ten-second round trip.
+    """
+    stripped = (text or "").strip()
+    if not stripped:
+        return False, "No job description was provided."
+    if len(stripped) < _MIN_JD_CHARS or len(stripped.split()) < _MIN_JD_WORDS:
+        return False, (
+            "This is too short to be a job description. Paste the full posting — "
+            "the role, required skills and eligibility criteria."
+        )
+    return True, ""
+
+
 def jd_is_usable(parsed: dict | None) -> tuple[bool, str]:
     """Whether a parsed JD carries enough to screen anyone against.
 

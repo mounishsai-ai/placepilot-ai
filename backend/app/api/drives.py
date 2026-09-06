@@ -17,6 +17,7 @@ from app.models import (
 )
 from app.api.auth import get_current_user, require_role
 from app.api.websocket import emit_agent_event
+from app.agents.jd_analyst import jd_text_is_plausible
 from app.agents.supervisor import run_placement_pipeline, resume_pipeline
 from app.agents import orchestrator
 from app.config import settings
@@ -274,6 +275,22 @@ async def run_pipeline(
     if not drive.jd_text:
         raise HTTPException(status_code=400, detail="JD text is required before running pipeline")
 
+    # Answer obvious non-JDs here, synchronously, instead of starting a job.
+    # Sending "abc" to the parser cost a ~9.6s model call and a slot against the
+    # daily quota to be told what len() knows — and because the halted run never
+    # writes jd_parsed, the caller then polled for 90s and was shown a message
+    # about the pipeline being slow. Refusing up front is instant and free.
+    plausible, why = jd_text_is_plausible(drive.jd_text)
+    if not plausible:
+        raise HTTPException(status_code=400, detail=why)
+
+    # A previous run's error must not be mistaken for this one's.
+    await db.execute(
+        delete(AgentEvent).where(
+            AgentEvent.drive_id == drive_id, AgentEvent.event_type == "pipeline_error"
+        )
+    )
+
     background_tasks.add_task(_run_pipeline_bg, drive_id)  # fresh session inside
     drive.status = DriveStatus.JD_ANALYZED
     await db.commit()
@@ -476,12 +493,28 @@ async def get_drive(
     _: object = Depends(get_current_user),
 ):
     drive = await _get_drive_or_404(drive_id, db)
+
+    pipeline_error = None
+    if not drive.jd_parsed:
+        err = await db.execute(
+            select(AgentEvent)
+            .where(AgentEvent.drive_id == drive_id, AgentEvent.event_type == "pipeline_error")
+            .order_by(AgentEvent.id.desc()).limit(1)
+        )
+        row = err.scalar_one_or_none()
+        if row:
+            pipeline_error = (row.payload or {}).get("error") or (row.payload or {}).get("reason")
+
     return {
         "id": drive.id,
         "title": drive.title,
         "company": drive.company.name if drive.company else None,
         "status": drive.status.value,
         "jd_parsed": drive.jd_parsed,
+        # A halted pipeline writes no jd_parsed, so a caller polling for it would
+        # otherwise wait out its own timeout and report the run as merely slow.
+        # Surfacing the error lets the poll stop and say what actually happened.
+        "pipeline_error": pipeline_error,
         "package_lpa": drive.package_lpa,
         "deadline": drive.deadline.isoformat() + "Z" if drive.deadline else None,
         "created_at": drive.created_at.isoformat() + "Z",
