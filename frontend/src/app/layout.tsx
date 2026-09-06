@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
+import LiquidGlassFilter from "@/components/ui/LiquidGlassFilter";
 
 export const metadata: Metadata = {
   title: "PlacePilot AI — AI-Powered Campus Placement Agent",
@@ -21,22 +22,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="bg-cosmic min-h-screen antialiased">
+        <LiquidGlassFilter />
         {children}
         <Toaster
           position="top-right"
           toastOptions={{
+            // Left over from the dark theme: near-black toasts with pale text,
+            // on an app that has been light for a while.
             style: {
-              background: "rgba(14,14,40,0.95)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              color: "#f0f4ff",
-              backdropFilter: "blur(20px)",
+              background: "rgba(255,255,255,0.86)",
+              border: "1px solid rgba(255,255,255,0.7)",
+              color: "#0B1714",
+              backdropFilter: "blur(20px) saturate(180%)",
               borderRadius: "12px",
+              boxShadow: "0 12px 32px -14px rgba(11,23,20,.22)",
             },
             success: {
-              iconTheme: { primary: "#10b981", secondary: "#020209" },
+              iconTheme: { primary: "#0FA968", secondary: "#FFFFFF" },
             },
             error: {
-              iconTheme: { primary: "#f43f5e", secondary: "#020209" },
+              iconTheme: { primary: "#C2453F", secondary: "#FFFFFF" },
             },
           }}
         />
