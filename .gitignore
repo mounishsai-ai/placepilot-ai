@@ -21,3 +21,11 @@ backend/.gcp_project.env
 college logo for poster.png
 
 docker-compose.override.yml
+
+# Demo video — hosted on GitHub outside the repo, not committed.
+# Git keeps every version forever, so an 80MB file makes every future clone
+# pay for it even after the file is deleted.
+*.mp4
+*.mov
+*.webm
+*.mkv
