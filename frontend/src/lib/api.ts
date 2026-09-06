@@ -70,6 +70,8 @@ export const drivesAPI = {
 // graph. These hit the orchestrator, where the model picks each step itself.
 export const agentAPI = {
   start: (driveId: string) => api.post(`/api/drives/${driveId}/run-agent`),
+  /** Any RUNNING/PAUSED run across all drives, with its pending question. */
+  live: () => api.get("/api/drives/agent-runs/live"),
   listRuns: (driveId: string) => api.get(`/api/drives/${driveId}/agent-runs`),
   getRun: (runId: string) => api.get(`/api/drives/agent-runs/${runId}`),
   answer: (runId: string, answer: string) =>

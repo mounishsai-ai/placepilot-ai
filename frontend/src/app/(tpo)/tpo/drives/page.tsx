@@ -11,13 +11,20 @@ import Link from "next/link";
 import { clsx } from "clsx";
 import TPOSidebar from "@/components/layout/TPOSidebar";
 import TopBar from "@/components/layout/TopBar";
-import { drivesAPI, scheduleAPI } from "@/lib/api";
+import { drivesAPI, scheduleAPI, agentAPI } from "@/lib/api";
 import { useTPOWebSocket } from "@/lib/websocket";
 import { useDashboardStore } from "@/lib/store";
 import toast from "react-hot-toast";
 import { useRouter } from "next/navigation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface LiveRun {
+  id: string;
+  drive_id: string;
+  status: string;
+  pending_question?: { question?: string; options?: string[] } | null;
+}
 
 interface Drive {
   id: string;
@@ -656,7 +663,6 @@ function ScheduleRoundModal({
   const [mode, setMode]                   = useState<"offline" | "online">("offline");
   const [venue, setVenue]                 = useState("");
   const [scheduling, setScheduling]       = useState(false);
-  const router = useRouter();
 
   const handleSchedule = async () => {
     if (!startDatetime || !endDatetime) {
@@ -681,14 +687,14 @@ function ScheduleRoundModal({
       // Step 2: start the scheduling agent (propose \u2192 validate \u2192 re-plan \u2192 commit)
       await scheduleAPI.runAgent(roundId);
 
-      // The old copy pointed at the agent dock, which was deleted deliberately.
-      // That left the modal closing onto nothing: the agent worked in the
-      // background, and a failure looked exactly like the button doing nothing.
-      // Go to the next step instead — the schedule, which is the thing the TPO
-      // confirms. That page waits there while the agent proposes and validates.
-      toast.success("Scheduling agent started — confirm the schedule when it lands.");
+      // Stay on this page. The row is the progress indicator: it moves to
+      // "Confirm Schedule" by itself once the agent commits, because the list
+      // refetches every few seconds. Navigating away — to the trace, or to the
+      // schedule tab — takes the reader off the one screen that shows the
+      // drive advancing. The old copy sent them to the agent dock, which was
+      // deleted deliberately, so the modal closed onto nothing at all.
+      toast.success("Scheduling agent started — this drive will move to Confirm Schedule.");
       onScheduled();
-      router.push(`/tpo/schedule?drive=${driveId}`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(msg ?? "Failed to create schedule");
@@ -836,6 +842,7 @@ function DriveCard({
   onReviewShortlist,
   onCreateRound,
   onConfirmSchedule,
+  pausedRun,
   onViewSchedule,
   onArchive,
   onDelete,
@@ -846,6 +853,7 @@ function DriveCard({
   onReviewShortlist: (id: string) => void;
   onCreateRound: (id: string) => void;
   onConfirmSchedule: (id: string) => void;
+  pausedRun?: LiveRun;
   onViewSchedule: (id: string) => void;
   onArchive: (id: string, title: string) => void;
   onDelete: (id: string, title: string) => void;
@@ -978,6 +986,20 @@ function DriveCard({
             >
               <Play size={13} /> Run Pipeline
             </button>
+          )}
+          {/* A paused agent outranks every status action below: the drive
+              cannot advance until this question is answered, and the reader is
+              the one being asked. */}
+          {pausedRun && (
+            <Link
+              href={`/tpo/drives/${drive.id}/agent`}
+              className="text-xs font-semibold flex items-center gap-1.5 py-1.5 px-3 rounded-lg transition-opacity hover:opacity-85"
+              style={{ background: "var(--gold-lt)", border: "1px solid var(--gold-ln)", color: "var(--gold-d)" }}
+              title={pausedRun.pending_question?.question ?? "The agent is waiting for your answer"}
+            >
+              <AlertTriangle size={13} />
+              The agent needs an answer
+            </Link>
           )}
           {drive.status === "shortlist_pending" && (
             <button
@@ -1117,6 +1139,7 @@ function DriveCard({
 export default function DrivesPage() {
   const router = useRouter();
   const [drives, setDrives] = useState<Drive[]>([]);
+  const [liveRuns, setLiveRuns] = useState<LiveRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [shortlistDriveId, setShortlistDriveId] = useState<string | null>(null);
   const [shortlistCandidates, setShortlistCandidates] = useState<ShortlistCandidate[]>([]);
@@ -1131,11 +1154,22 @@ export default function DrivesPage() {
 
   const fetchDrives = useCallback(async () => {
     try {
-      const res = await drivesAPI.list();
+      // Live runs come back with the drives, not separately. A paused agent is
+      // the single most urgent thing on this page — it is a question addressed
+      // to the reader, and until it is answered the drive cannot move. The
+      // deleted agent dock was the only surface that said so, which is why a
+      // waiting agent came to look like a button that had done nothing.
+      const [res, liveRes] = await Promise.all([
+        drivesAPI.list(),
+        agentAPI.live().catch(() => ({ data: [] as LiveRun[] })),
+      ]);
       const data: Drive[] = res.data;
       setDrives(data);
-      // Auto-poll while any drive is mid-pipeline
-      const hasActive = data.some(d => ACTIVE_STATUSES.includes(d.status));
+      setLiveRuns((liveRes.data as LiveRun[]) ?? []);
+      // Auto-poll while any drive is mid-pipeline, or an agent is mid-run
+      const hasActive =
+        data.some(d => ACTIVE_STATUSES.includes(d.status)) ||
+        ((liveRes.data as LiveRun[]) ?? []).length > 0;
       setPollingActive(hasActive);
     } catch {
       toast.error("Failed to load drives");
@@ -1320,6 +1354,9 @@ export default function DrivesPage() {
                   onArchive={handleArchive}
                   onDelete={handleDelete}
                   liveEvents={agentEvents.filter((e) => e.drive_id === drive.id)}
+                  pausedRun={liveRuns.find(
+                    (r) => r.drive_id === drive.id && r.status === "paused"
+                  )}
                 />
               ))}
             </div>
