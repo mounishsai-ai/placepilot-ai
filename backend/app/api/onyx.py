@@ -18,7 +18,7 @@ router = APIRouter()
 
 class OnyxChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=500)
-    # Vertex's own `contents` list from the previous turn, round-tripped by
+    # The Gemini API's own `contents` list from the previous turn, round-tripped by
     # the frontend — gives the sidebar real multi-turn memory with no new
     # DB table (this app has no migration path beyond create_all).
     history: list[dict] = Field(default_factory=list)

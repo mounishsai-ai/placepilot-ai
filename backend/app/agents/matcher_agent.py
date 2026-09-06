@@ -1,10 +1,13 @@
 """
 Matcher Agent — embeds student profiles + JD, finds top-k matches via ChromaDB.
 
-Embeddings go straight to Vertex AI's REST :predict endpoint (project-billed
-quota, not the free per-API-key quota) — the free-tier generativelanguage.
-googleapis.com path was hitting 429s at ~8 rapid batches/minute in production.
-Falls back to TF-IDF if the REST call fails.
+Embeddings go over direct REST (see gemini_transport) rather than through
+LangChain, which hung for 60s and then 504'd on every model tried.
+
+Rate limits are the reason for the batching below: sending profiles one at a
+time hit 429s at roughly 8 batches a minute. Embedding calls are therefore
+batched hard, and a failure falls back to TF-IDF rather than aborting the
+match — a worse ranking still beats no ranking.
 """
 import asyncio
 import math
@@ -151,7 +154,7 @@ async def index_students_for_drive(
         for s in students
     ]
 
-    # Vertex accepted all 201 students in a single :predict call in ~9s when
+    # The API accepted all 201 students in a single embedding call in ~9s when
     # tested live — batches of 200 mean a typical drive needs just 1-2 calls
     # instead of the 11 that used to blow through the per-minute quota.
     BATCH_SIZE = 200

@@ -3,7 +3,7 @@ The orchestrator — a real agent loop over the tool registry in tools.py.
 
 Unlike supervisor.py's hardcoded graph.add_edge() chain, nothing here decides
 the next step in Python. Each iteration sends the running conversation to
-Gemini (function calling, over Vertex AI — verified live: the model both
+Gemini (function calling — verified live: the model both
 emits a functionCall and correctly consumes a functionResponse to continue)
 and does whatever tool call the model returns. Two different drives can and
 will produce two different execution traces — that's the whole point.
@@ -138,7 +138,7 @@ _PROFILES = {
 MAX_STEPS = 15
 
 
-# Vertex hands back 429 (quota) or 503 (overloaded) under real load — both are
+# Gemini hands back 429 (quota) or 503 (overloaded) under real load — both are
 # transient and worth a couple of retries rather than failing the whole run,
 # which previously happened on the very first 429 seen during live testing.
 _RETRY_DELAYS_S = [5, 15]

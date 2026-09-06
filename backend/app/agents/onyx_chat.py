@@ -8,7 +8,7 @@ to durably resume. Each message runs a short tool-calling loop to completion
 and returns the final answer synchronously — same shape as analyst_agent's
 /ask endpoint, but Onyx also carries two more tools so it can dispatch and
 read a real negotiation, not just query the database. Conversation history
-is kept client-side (Vertex's own `contents` shape, round-tripped through the
+is kept client-side (the Gemini API's own `contents` shape, round-tripped through the
 frontend) rather than a new DB table — consistent with this app's no-Alembic
 constraint, and a chat sidebar has no reason to survive a container restart
 the way a paused agent run does.
@@ -95,7 +95,7 @@ async def _exec_ask_analyst(db: AsyncSession, args: dict) -> dict:
 
 
 async def run_onyx_chat(db: AsyncSession, message: str, history: list[dict]) -> dict[str, Any]:
-    """One turn of the sidebar chat. `history` is the prior turns' Vertex
+    """One turn of the sidebar chat. `history` is the prior turns' Gemini
     `contents` list (round-tripped by the frontend) so the sidebar holds a
     real conversation, not isolated one-shot questions."""
     from app.agents.orchestrator import _call_gemini, _strip_thought_signatures

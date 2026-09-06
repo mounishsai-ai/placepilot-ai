@@ -19,7 +19,7 @@ these through a tool loop would add latency and failure modes for nothing.
 import json
 from typing import Any
 
-from app.agents.vertex_json import generate_json as _generate_json_raw
+from app.agents.gemini_json import generate_json as _generate_json_raw
 
 
 async def _generate_json(system_prompt: str, user_prompt: str) -> dict[str, Any]:

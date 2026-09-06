@@ -15,7 +15,7 @@ from typing import Any
 
 from loguru import logger
 
-from app.agents.vertex_json import generate_json
+from app.agents.gemini_json import generate_json
 
 
 MAX_QUERY_ROWS = 100

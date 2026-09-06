@@ -30,16 +30,19 @@ understand, not just be told.
 - **Frontend:** Next.js 14 App Router, TS, Tailwind. PlacePilot design system —
   light theme, dense/editorial, NOT the old dark glassmorphism.
 - **Backend:** FastAPI, async SQLAlchemy, PostgreSQL (Cloud SQL in prod).
-- **LLM:** Gemini, over **either** backend — `gemini_transport.py` picks one
-  and `LLM_BACKEND` (`auto`/`vertex`/`aistudio`) selects it. `auto` uses Vertex
-  only when a GCP project *and* ADC are both present, so a clone with just a
-  `GEMINI_API_KEY` runs on the key path. Vertex has no daily cap, which is why
-  the deployed build used it.
-  **The orchestrator model differs per backend and must:** `gemini-2.5-flash`
-  on Vertex, `gemini-3.5-flash` on the key — 2.5-flash is retired on
-  `generativelanguage.googleapis.com` and 404s for keys issued after its
-  cutoff. Don't collapse these back into one setting.
+- **LLM:** Gemini over one path — `generativelanguage.googleapis.com` with a
+  `GEMINI_API_KEY`. `gemini_transport.py` is the only place that knows the URL
+  or the auth header.
+  **`ORCHESTRATOR_MODEL` is `gemini-3.5-flash`, not `gemini-2.5-flash`.** The
+  loop was built and verified on 2.5-flash, but that model is retired on this
+  endpoint and 404s for keys issued after its cutoff. Don't "restore" it.
   `gemini-3.5-flash` / `-flash-lite` for JD parsing and match explanations.
+- **Vertex AI was removed 2026-09-06** (it had also been renamed the Gemini
+  Enterprise Agent Platform at Cloud Next 2026; the `aiplatform.googleapis.com`
+  endpoint itself was unchanged). It existed so the hosted demo had a path with
+  no daily cap. There is no hosted demo now, and nobody cloning this repo can
+  authenticate against a GCP project — so it was code that could not be run.
+  Don't rebuild it.
 - **Deploy:** 100% Google Cloud Run (both services) + Cloud SQL + Artifact
   Registry. No Railway/Vercel — DEPLOYMENT.md is stale, ignore it.
 - **No Alembic.** `create_all` only adds new *tables*, never new columns on
@@ -47,7 +50,16 @@ understand, not just be told.
   `ALTER TABLE` on the live Cloud SQL DB — prefer stashing new state inside an
   existing JSON column instead (see `AgentRun.state_json` below).
 
-## Deploy — GCP project `placement-agent-22587`, region `us-central1`
+## Deploy — none, deliberately
+**There is no hosted instance any more.** A demo on trial credits stops working
+when they lapse, and a dead link on a portfolio project is worse than no link:
+the artifact is this repo plus a demo video in the README. Don't re-add a
+"Live:" URL.
+
+The commands below are kept as a record of how it *was* deployed, and because
+Cloud Run is still a reasonable target if a deploy is ever wanted again.
+
+### Historical — GCP project `placement-agent-22587`, region `us-central1`
 | Service | URL |
 |---|---|
 | `placement-backend` | https://placement-backend-891885517174.us-central1.run.app |

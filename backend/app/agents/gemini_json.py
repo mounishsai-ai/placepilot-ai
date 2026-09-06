@@ -1,5 +1,5 @@
 """
-Shared one-shot JSON generation over Vertex — the shape panel_agent.py and
+Shared one-shot JSON generation — the shape panel_agent.py and
 auditor_agent.py both need: no tools, no conversation, one document out.
 Split out once a second caller needed it rather than duplicated a second time.
 """
@@ -19,7 +19,7 @@ _RETRY_DELAYS_S = [5, 15]
 
 
 async def generate_json(system_prompt: str, user_prompt: str, *, caller: str = "agent") -> dict[str, Any]:
-    """One Vertex call that must come back as a JSON object.
+    """One Gemini call that must come back as a JSON object.
 
     responseMimeType pins the model to JSON so we don't have to strip markdown
     fences, but a fence still shows up occasionally — the guard below is
@@ -39,7 +39,7 @@ async def generate_json(system_prompt: str, user_prompt: str, *, caller: str = "
                 data = resp.json()
                 break
             logger.warning(
-                "{}: Vertex {}, retrying in {}s (attempt {}/{})",
+                "{}: Gemini {}, retrying in {}s (attempt {}/{})",
                 caller, resp.status_code, delay, attempt + 1, len(_RETRY_DELAYS_S),
             )
             await asyncio.sleep(delay)
@@ -47,7 +47,7 @@ async def generate_json(system_prompt: str, user_prompt: str, *, caller: str = "
     try:
         parts = data["candidates"][0]["content"]["parts"]
     except (KeyError, IndexError):
-        logger.warning("{}: no parts in Vertex response: {}", caller, data)
+        logger.warning("{}: no parts in Gemini response: {}", caller, data)
         return {}
 
     # gemini-2.5-flash is a thinking model: it can emit a "thought" part before
@@ -56,7 +56,7 @@ async def generate_json(system_prompt: str, user_prompt: str, *, caller: str = "
     # by treating all text as trace-worthy; here there's only one answer part).
     text_parts = [p["text"] for p in parts if "text" in p and not p.get("thought")]
     if not text_parts:
-        logger.warning("{}: no non-thought text in Vertex response: {}", caller, data)
+        logger.warning("{}: no non-thought text in Gemini response: {}", caller, data)
         return {}
     text = "".join(text_parts)
 

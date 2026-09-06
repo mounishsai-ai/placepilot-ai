@@ -21,7 +21,7 @@ from typing import Any
 
 from loguru import logger
 
-from app.agents.vertex_json import generate_json
+from app.agents.gemini_json import generate_json
 
 AUDITOR_SYSTEM = """You audit a college placement drive's eligibility-and-ranking pipeline
 before a human (the placement officer, "TPO") approves its output. You are given only the

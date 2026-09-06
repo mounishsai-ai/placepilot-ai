@@ -18,28 +18,12 @@ class Settings(BaseSettings):
     GEMINI_MODEL_PRO: str = "gemini-3.5-flash"           # high-quality JD analysis; gemini-3.6-flash measured ~27s/call vs ~5.7s here
     EMBEDDING_MODEL: str = "gemini-embedding-001"
 
-    # Vertex AI — used only for embeddings (project-billed quota, no per-key 429s;
-    # see backend/.gcp_project.env for how this was verified). JD analysis / match
-    # explanations stay on the AI Studio key path — low volume, not currently rate-limited.
-    # Empty by default: a clone has no GCP project, and resolve_backend() then
-    # sends every call down the GEMINI_API_KEY path instead. Set this only if
-    # you actually have a Vertex-enabled project with ADC available.
-    GCP_PROJECT_ID: str = ""
-    VERTEX_EMBEDDING_LOCATION: str = "us-central1"
-    VERTEX_ORCHESTRATOR_MODEL: str = "gemini-2.5-flash"  # function calling verified live on this model
-
-    # The orchestrator model on the API-key path. It cannot be the Vertex one:
-    # gemini-2.5-flash is retired on generativelanguage.googleapis.com and
-    # returns 404 for any key issued after its cutoff. Function calling is
-    # verified working on this model over that endpoint.
-    AISTUDIO_ORCHESTRATOR_MODEL: str = "gemini-3.5-flash"
-
-    # Which Gemini backend to call: "vertex" (project-billed, no daily cap),
-    # "aistudio" (API key, free tier with a daily cap), or "auto" — which
-    # prefers Vertex whenever a project and credentials are both present, so
-    # this default changes nothing about how the deployed app behaves.
-    # Read by app/agents/gemini_transport.py.
-    LLM_BACKEND: str = "auto"
+    # Drives the agent loop and every one-shot JSON agent: it is the only model
+    # here that has to do function calling. Note it is NOT gemini-2.5-flash,
+    # which the loop was originally built against — that model is retired on
+    # generativelanguage.googleapis.com and 404s for keys issued after its
+    # cutoff. Function calling is verified working on this one.
+    ORCHESTRATOR_MODEL: str = "gemini-3.5-flash"
 
     CHROMA_PERSIST_DIR: str = "./chroma_db"
 
