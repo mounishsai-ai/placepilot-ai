@@ -172,7 +172,23 @@ The app also runs with no key at all: embeddings fall back to TF-IDF and the
 LLM-dependent features degrade rather than crash. The agent loops need one to do
 anything interesting.
 
-Requires Python 3.11+ and Node 18+.
+### With Docker (everything at once)
+
+```bash
+cp backend/.env.example backend/.env     # add GEMINI_API_KEY
+docker compose up --build
+docker compose exec api python -m seed.seed_db
+```
+
+Then open http://localhost:3000. Postgres, API and frontend all come up
+together; nothing else needs installing.
+
+Note the API is published on host port 8000 and Postgres on **5433** — 5432 is
+left free so this does not collide with a Postgres you already run.
+
+### Manually
+
+Requires Python 3.11+, Node 18+ and PostgreSQL 14+.
 
 #### Backend
 
@@ -201,9 +217,6 @@ npm run dev
 
 `NEXT_PUBLIC_*` variables are inlined by Next.js **at build time**, not read at
 runtime — a production build without them ships a frontend that cannot reach the API.
-
-There is also a `docker-compose.yml` covering Postgres, API and frontend
-together, if you would rather not install Python and Node locally.
 
 ### Deployment
 
