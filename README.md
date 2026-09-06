@@ -134,12 +134,29 @@ it is *not* the model here. That one is retired on
 cutoff — so a repo meant to be cloned cannot use it, whatever the code was
 developed on.
 
-Everything authenticates with one API key against one endpoint. An earlier
-version also spoke to Vertex AI (since renamed the Gemini Enterprise Agent
-Platform), authorised with a Google Cloud bearer token, because the hosted demo
-needed a path with no daily request ceiling. That demo is gone, and with it the
-reason: a second backend nobody cloning this repo could authenticate against was
-code that could not be exercised.
+### Two backends behind one interface
+
+The same models are reachable two ways: an **API key** against
+`generativelanguage.googleapis.com`, or **Vertex AI** (since renamed the Gemini
+Enterprise Agent Platform) with a Google Cloud bearer token. `LLM_BACKEND`
+picks; the default uses the key whenever one is set, because that is what a
+clone of this repo can authenticate. Vertex is opt-in, and worth it only
+because the free key tier is tight enough to 429 partway through one drive.
+
+`gemini_transport.py` is the only module that knows which is which. The two are
+less symmetric than they look:
+
+- **`generateContent` is byte-identical** on both, so the agent loop needed no changes.
+- **Embeddings are not.** Vertex uses `:predict` with an `instances` list; the key
+  path uses `:batchEmbedContents` with a `requests` list, nests the vector
+  differently, and caps a batch at 100 where Vertex has no limit.
+- **The models differ.** `gemini-2.5-flash` is what the loop was verified on and
+  Vertex still serves it, but it is retired on the key endpoint.
+
+That embedding asymmetry caused a real bug: a batch size tuned for Vertex made
+every call 400 on the key path, and since ranking falls back to TF-IDF on any
+exception, shortlists silently degraded from semantic to keyword matching with
+nothing on screen to say so. The trace now records which ranking actually ran.
 
 `gemini-2.5-flash` is a thinking model and can emit a `"thought": true` part *before*
 the answer part. `vertex_json.py` scans all parts and skips thought parts —

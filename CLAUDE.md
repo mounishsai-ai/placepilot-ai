@@ -37,12 +37,21 @@ understand, not just be told.
   loop was built and verified on 2.5-flash, but that model is retired on this
   endpoint and 404s for keys issued after its cutoff. Don't "restore" it.
   `gemini-3.5-flash` / `-flash-lite` for JD parsing and match explanations.
-- **Vertex AI was removed 2026-09-06** (it had also been renamed the Gemini
-  Enterprise Agent Platform at Cloud Next 2026; the `aiplatform.googleapis.com`
-  endpoint itself was unchanged). It existed so the hosted demo had a path with
-  no daily cap. There is no hosted demo now, and nobody cloning this repo can
-  authenticate against a GCP project — so it was code that could not be run.
-  Don't rebuild it.
+- **Vertex is optional and opt-in** (`LLM_BACKEND=vertex` + `GCP_PROJECT_ID`
+  + ADC). Removed 2026-09-06 and restored the same day: the free key tier 429s
+  partway through a single drive, which made it impossible to record a demo.
+  Vertex bills quota to the project instead. The platform was renamed the
+  Gemini Enterprise Agent Platform at Cloud Next 2026, but
+  `aiplatform.googleapis.com` is unchanged.
+- **`docker-compose.override.yml` (gitignored) is what puts this machine on
+  Vertex** — it mounts the host's ADC file into the container and pins
+  `LLM_BACKEND=vertex`. Nobody cloning the repo has those credentials, which is
+  why it is not in `docker-compose.yml`.
+- **Embedding batches cap at 100 on the key path** (`MAX_EMBED_BATCH`).
+  Vertex's `:predict` has no such limit; 200 was tuned for it and made every
+  key-path batch 400. Ranking falls back to TF-IDF on any exception, so this
+  degraded shortlists silently — `matching_complete` now carries
+  `ranking_method`.
 - **Deploy:** 100% Google Cloud Run (both services) + Cloud SQL + Artifact
   Registry. No Railway/Vercel — DEPLOYMENT.md is stale, ignore it.
 - **No Alembic.** `create_all` only adds new *tables*, never new columns on

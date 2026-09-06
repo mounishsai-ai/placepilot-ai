@@ -20,3 +20,4 @@ openinng instrutctions.md
 backend/.gcp_project.env
 college logo for poster.png
 
+docker-compose.override.yml

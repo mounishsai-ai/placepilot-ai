@@ -18,12 +18,23 @@ class Settings(BaseSettings):
     GEMINI_MODEL_PRO: str = "gemini-3.5-flash"           # high-quality JD analysis; gemini-3.6-flash measured ~27s/call vs ~5.7s here
     EMBEDDING_MODEL: str = "gemini-embedding-001"
 
-    # Drives the agent loop and every one-shot JSON agent: it is the only model
-    # here that has to do function calling. Note it is NOT gemini-2.5-flash,
-    # which the loop was originally built against — that model is retired on
-    # generativelanguage.googleapis.com and 404s for keys issued after its
-    # cutoff. Function calling is verified working on this one.
+    # Drives the agent loop and every one-shot JSON agent: the only model here
+    # that has to do function calling. NOT gemini-2.5-flash — that one is
+    # retired on generativelanguage.googleapis.com and 404s for keys issued
+    # after its cutoff. Verified doing function calling on this endpoint.
     ORCHESTRATOR_MODEL: str = "gemini-3.5-flash"
+
+    # ── Optional Vertex AI path ──────────────────────────────────────────────
+    # "auto" (default) uses GEMINI_API_KEY whenever one is set, because that is
+    # what a clone of this repo can authenticate. Set LLM_BACKEND=vertex, plus a
+    # project with ADC available, to bill quota to that project instead — the
+    # free key tier is tight enough to 429 partway through a single drive.
+    LLM_BACKEND: str = "auto"
+    GCP_PROJECT_ID: str = ""
+    VERTEX_EMBEDDING_LOCATION: str = "us-central1"
+    # Vertex still serves gemini-2.5-flash, which is what the loop was built and
+    # verified against, so that path keeps it.
+    VERTEX_ORCHESTRATOR_MODEL: str = "gemini-2.5-flash"
 
     CHROMA_PERSIST_DIR: str = "./chroma_db"
 

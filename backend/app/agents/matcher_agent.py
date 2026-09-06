@@ -17,7 +17,7 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from app.config import settings
 from app.agents.jd_analyst import explain_match
-from app.agents.gemini_transport import embed_texts
+from app.agents.gemini_transport import embed_texts, MAX_EMBED_BATCH
 from loguru import logger
 
 
@@ -154,12 +154,12 @@ async def index_students_for_drive(
         for s in students
     ]
 
-    # Hard ceiling, not a tuning choice: batchEmbedContents rejects anything
-    # over 100 with "at most 100 requests can be in one batch". 200 worked on
-    # Vertex's :predict endpoint, which had no such limit — so this silently
-    # started 400ing when the backend moved, and every batch fell through to
-    # the TF-IDF path with nothing on screen to say ranking had degraded.
-    BATCH_SIZE = 100
+    # Hard ceiling on the API-key path, not a tuning choice: batchEmbedContents
+    # rejects anything over 100 with "at most 100 requests can be in one batch".
+    # 200 worked on Vertex's :predict, which has no such limit — so this
+    # silently started 400ing when the backend moved, and every batch fell
+    # through to TF-IDF with nothing on screen to say ranking had degraded.
+    BATCH_SIZE = MAX_EMBED_BATCH
     embedded_ok = True
     for i in range(0, len(texts), BATCH_SIZE):
         batch_texts = texts[i: i + BATCH_SIZE]
