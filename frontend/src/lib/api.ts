@@ -47,6 +47,8 @@ export const drivesAPI = {
   create: (data: object) => api.post("/api/drives/", data),
   runPipeline: (id: string) => api.post(`/api/drives/${id}/run-pipeline`),
   getShortlist: (id: string) => api.get(`/api/drives/${id}/shortlist`),
+  selectShortlist: (id: string, instruction: string, selected_ids: string[]) =>
+    api.post(`/api/drives/${id}/shortlist/select`, { instruction, selected_ids }),
   approveShortlist: (id: string, data: object) =>
     api.patch(`/api/drives/${id}/shortlist`, data),
   approveSchedule: (id: string, data: object) =>

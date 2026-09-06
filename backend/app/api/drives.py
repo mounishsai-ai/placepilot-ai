@@ -18,6 +18,7 @@ from app.models import (
 from app.api.auth import get_current_user, require_role
 from app.api.websocket import emit_agent_event
 from app.agents.jd_analyst import jd_text_is_plausible
+from app.agents.shortlist_selector import select_by_instruction
 from app.agents.supervisor import run_placement_pipeline, resume_pipeline
 from app.agents import orchestrator
 from app.config import settings
@@ -645,6 +646,9 @@ async def get_shortlist(
             "roll_no": m.student.roll_no if m.student else None,
             "cgpa": m.student.cgpa if m.student else None,
             "branch": m.student.branch if m.student else None,
+            # Needed by the natural-language selector: "no active backlogs" is
+            # one of the commonest things a TPO narrows a shortlist by.
+            "backlogs_active": m.student.backlogs_active if m.student else None,
             "score": m.score,
             "rank": m.rank,
             "shortlisted": m.shortlisted,
@@ -653,6 +657,51 @@ async def get_shortlist(
         }
         for m in matches
     ]
+
+
+@router.post("/{drive_id}/shortlist/select")
+async def select_shortlist_by_instruction(
+    drive_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_role(UserRole.TPO)),
+):
+    """Plain-English instruction -> which candidates should be selected.
+
+    Writes nothing. It returns a selection for the TPO to look at and approve,
+    so the existing human gate is still the only thing that commits a shortlist.
+    """
+    instruction = str(payload.get("instruction") or "").strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="Tell Onyx what to shortlist.")
+    if len(instruction) > 500:
+        raise HTTPException(status_code=400, detail="That instruction is too long.")
+
+    await _get_drive_or_404(drive_id, db)
+    result = await db.execute(
+        select(MatchScore)
+        .options(selectinload(MatchScore.student))
+        .where(MatchScore.drive_id == drive_id)
+        .order_by(MatchScore.rank)
+    )
+    candidates = [
+        {
+            "student_id": m.student_id,
+            "branch": m.student.branch if m.student else None,
+            "cgpa": m.student.cgpa if m.student else None,
+            "backlogs_active": m.student.backlogs_active if m.student else None,
+            "rank": m.rank,
+        }
+        for m in result.scalars().all()
+    ]
+    if not candidates:
+        raise HTTPException(status_code=400, detail="This drive has no ranked candidates yet.")
+
+    already = {str(x) for x in (payload.get("selected_ids") or [])}
+    outcome = await select_by_instruction(instruction, candidates, already)
+    if "error" in outcome:
+        raise HTTPException(status_code=422, detail=outcome["error"])
+    return outcome
 
 
 @router.patch("/{drive_id}/shortlist")

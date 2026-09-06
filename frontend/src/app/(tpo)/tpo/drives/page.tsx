@@ -5,6 +5,7 @@ import {
   Briefcase, Play, CheckCircle, Clock, AlertTriangle,
   ChevronDown, ChevronUp, Users, Star, X, Check,
   Building2, Calendar, TrendingUp, Zap, Search, Radio, Trash2, Plus,
+  Sparkles, CornerDownLeft, Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
@@ -358,6 +359,30 @@ function ShortlistModal({
   const [approving, setApproving] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [onyxOpen, setOnyxOpen] = useState(false);
+  const [instruction, setInstruction] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [lastOnyx, setLastOnyx] = useState<string | null>(null);
+
+  // Onyx narrows or widens the selection; it never approves it. The TPO still
+  // sees every checkbox change and still presses the approve button.
+  const askOnyx = async () => {
+    const text = instruction.trim();
+    if (!text || asking) return;
+    setAsking(true);
+    try {
+      const res = await drivesAPI.selectShortlist(driveId, text, Array.from(selected));
+      const ids: string[] = res.data.student_ids ?? [];
+      setSelected(new Set(ids));
+      setLastOnyx(`${res.data.summary || text} — ${ids.length} selected`);
+      setInstruction("");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg ?? "Onyx could not apply that.");
+    } finally {
+      setAsking(false);
+    }
+  };
 
   const filteredCandidates = candidates.filter((c) => {
     if (!searchQuery.trim()) return true;
@@ -421,6 +446,54 @@ function ShortlistModal({
             <strong>AI pre-selected {candidates.filter(c => c.shortlisted).length} candidates</strong> based on vector similarity to the JD.
             You can add or remove candidates below before approving.
           </p>
+        </div>
+
+        {/* Shortlist with Onyx — plain-English selection */}
+        <div className="mb-3 px-1">
+          {!onyxOpen ? (
+            <button
+              onClick={() => setOnyxOpen(true)}
+              className="inline-flex items-center gap-2 text-[12.5px] font-semibold py-1.5 px-3 rounded-lg transition-colors"
+              style={{ color: "var(--jade-d)", background: "var(--wash)", border: "1px solid #CBEDDD" }}
+            >
+              <Sparkles size={13} /> Shortlist with Onyx
+            </button>
+          ) : (
+            <div className="rounded-xl p-3" style={{ background: "var(--wash)", border: "1px solid #CBEDDD" }}>
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} style={{ color: "var(--jade)" }} className="flex-shrink-0" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={instruction}
+                  onChange={(e) => setInstruction(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") askOnyx();
+                    if (e.key === "Escape") setOnyxOpen(false);
+                  }}
+                  placeholder="e.g. top 15 CSE and IT students with CGPA above 7.5"
+                  className="input-glass flex-1 py-1.5 px-3 text-sm"
+                  disabled={asking}
+                />
+                <button
+                  onClick={askOnyx}
+                  disabled={asking || !instruction.trim()}
+                  className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 disabled:opacity-50"
+                >
+                  {asking ? <Loader2 size={12} className="animate-spin" /> : <CornerDownLeft size={12} />}
+                  {asking ? "Working" : "Apply"}
+                </button>
+                <button onClick={() => setOnyxOpen(false)} style={{ color: "var(--faint)" }} className="hover:opacity-70">
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-[11px] mt-2" style={{ color: "var(--ash)" }}>
+                {lastOnyx
+                  ? lastOnyx
+                  : "Onyx ticks the boxes for you — nothing is approved until you press the button below."}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Search Bar */}
@@ -884,11 +957,11 @@ function DriveCard({
           {drive.status === "shortlist_pending" && (
             <Link
               href={`/tpo/drives/${drive.id}/agent`}
-              className="text-xs font-semibold flex items-center gap-1.5 py-1.5 px-3 rounded-lg transition-colors"
-              style={{ color: "var(--jade-d)", background: "var(--wash)", border: "1px solid #CBEDDD" }}
-              title="Review how the agent ranked these candidates, then approve"
+              className="text-xs flex items-center gap-1.5 py-1.5 px-3 rounded-lg transition-colors hover:opacity-70"
+              style={{ color: "var(--ash)", border: "1px solid var(--line)" }}
+              title="See the steps the agent took and the tools it chose"
             >
-              <Radio size={13} /> Shortlist with Onyx
+              <Radio size={13} /> Agent trace
             </Link>
           )}
           {drive.status === "draft" && (
