@@ -167,6 +167,14 @@ h1 em, h2 em, h3 em, .hl {
       background: var(--card);
       border-color: var(--line);
     }
+    .stat-gloss {
+      background: linear-gradient(168deg, #FFFFFF 0%, var(--wash-2) 52%, #E8F7F0 100%);
+      border-color: var(--line);
+    }
+    .stat-gloss-gold {
+      background: linear-gradient(168deg, #FFFDF8 0%, var(--gold-lt) 54%, #F7E4C2 100%);
+      border-color: var(--gold-ln);
+    }
   }
 
   /* Transparency is an accessibility setting, not only a taste one. */
@@ -176,6 +184,16 @@ h1 em, h2 em, h3 em, .hl {
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
       border-color: var(--line);
+    }
+    .stat-gloss {
+      background: linear-gradient(168deg, #FFFFFF 0%, var(--wash-2) 52%, #E8F7F0 100%);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-color: var(--line);
+    }
+    .stat-gloss-gold {
+      background: linear-gradient(168deg, #FFFDF8 0%, var(--gold-lt) 54%, #F7E4C2 100%);
+      border-color: var(--gold-ln);
     }
   }
 
@@ -189,9 +207,17 @@ h1 em, h2 em, h3 em, .hl {
      pipeline tiles, so dark keeps meaning "status" and not "decoration". */
   .stat-gloss {
     @apply relative overflow-hidden rounded-xl transition-all duration-200;
-    background: linear-gradient(168deg, #FFFFFF 0%, var(--wash-2) 52%, #E8F7F0 100%);
-    border: 1px solid var(--line);
-    box-shadow: 0 1px 2px rgba(11,23,20,.05), 0 10px 24px -10px rgba(11,23,20,.24);
+    /* The gradient is now a tint over what is behind, not a paint covering it.
+       Keeping a trace of it matters: a pure flat translucency loses the
+       top-to-bottom fall that makes the tile read as a lit surface. */
+    background: linear-gradient(168deg, rgba(255,255,255,.78) 0%, rgba(246,253,250,.62) 52%, rgba(232,247,240,.55) 100%);
+    backdrop-filter: blur(20px) saturate(185%);
+    -webkit-backdrop-filter: blur(20px) saturate(185%);
+    border: 1px solid rgba(255,255,255,.66);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.9),
+      0 1px 2px rgba(11,23,20,.04),
+      0 12px 28px -12px rgba(11,23,20,.2);
   }
   .stat-gloss::before {
     content: '';
@@ -213,10 +239,15 @@ h1 em, h2 em, h3 em, .hl {
 
   /* Same gloss, gold body — carrying the one meaning gold ever carries:
      the agent has stopped and a person has to decide. */
+  /* Gold means a human is being waited on, so it stays noticeably more solid
+     than its neighbours — the one tile that should not recede into the page. */
   .stat-gloss-gold {
-    background: linear-gradient(168deg, #FFFDF8 0%, var(--gold-lt) 54%, #F7E4C2 100%);
-    border-color: var(--gold-ln);
-    box-shadow: 0 1px 2px rgba(138,90,18,.07), 0 10px 24px -10px rgba(138,90,18,.36);
+    background: linear-gradient(168deg, rgba(255,253,248,.9) 0%, rgba(253,244,227,.8) 54%, rgba(247,228,194,.72) 100%);
+    border-color: rgba(240,221,184,.9);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.9),
+      0 1px 2px rgba(138,90,18,.06),
+      0 12px 28px -12px rgba(138,90,18,.32);
   }
   .stat-gloss-gold:hover {
     border-color: #E7CE9C;
