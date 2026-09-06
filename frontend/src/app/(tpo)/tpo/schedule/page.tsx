@@ -165,7 +165,7 @@ function SchedulePageInner() {
     }
   }, []);
 
-  // Arriving straight from "start the scheduling agent" means the agent is
+  // Arriving straight from building a schedule means it may still be
   // still proposing and validating, so this drive has no committed slots yet
   // and the page would sit empty until a manual refresh. Poll briefly, and
   // stop the moment its slots land. Only when ?drive= sent us here — there is
@@ -252,7 +252,7 @@ function SchedulePageInner() {
         start_datetime: toNaiveISO(startDatetime),
         end_datetime: toNaiveISO(endDatetime),
       });
-      toast.success("Round created! Scheduling agent started — watch it in the agent dock.");
+      toast.success("Round created — building the schedule.");
       await scheduleAPI.runAgent(res.data.id);
       setShowCreateRound(false);
       // The agent runs in the background (propose → validate → re-plan →

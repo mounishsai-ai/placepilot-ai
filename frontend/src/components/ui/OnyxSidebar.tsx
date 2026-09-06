@@ -8,7 +8,7 @@ import { onyxAPI } from "@/lib/api";
 /* Onyx, reachable from anywhere in the TPO portal — not scoped to one drive
    or round the way the trace views elsewhere are. Free-text in, a real tool-
    calling turn out: it can query the live database (via the same validated
-   SQL path as the Analyst Agent) or dispatch/read a real negotiation, never
+   SQL path as the Analyst Agent), never
    a scripted response. Conversation memory is Vertex's own `contents` list,
    round-tripped with every request — see onyx_chat.py for why that's enough
    without a new DB table. */
@@ -28,8 +28,6 @@ interface Message {
 
 const TOOL_LABEL: Record<string, string> = {
   ask_analyst: "queried the database",
-  start_negotiation: "dispatched a negotiation",
-  get_negotiation_outcome: "read a negotiation's outcome",
 };
 
 export default function OnyxSidebar() {

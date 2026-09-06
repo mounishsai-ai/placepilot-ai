@@ -18,7 +18,7 @@ interface Props {
   still?: boolean;
   className?: string;
   /** violet = a second, independent voice (matches the Auditor's colour in
-      AgentTrace) — used for the Company agent in the negotiation arena so
+      AgentTrace) so
       the two sides never read as the same speaker. onyx = the supervisor
       itself — dark graphite, reads as "the boss" above jade/violet, not a
       third peer. Overridden by `waiting`. */

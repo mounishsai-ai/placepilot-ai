@@ -52,17 +52,18 @@ app = FastAPI(
 )
 
 # ─── CORS ────────────────────────────────────────────────────────────────────
+# A fixed list. There was a wildcard regex here matching every *.vercel.app
+# host, alongside allow_credentials — which lets any site on that domain make
+# credentialed requests to this API. Nothing is deployed to Vercel, so the rule
+# only ever widened the origin surface.
 CORS_ORIGINS = [
     settings.FRONTEND_URL,
     "http://localhost:3000",
     "http://localhost:3001",
-    "https://*.vercel.app",         # Vercel preview deployments
-    "https://placementai.vercel.app",
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

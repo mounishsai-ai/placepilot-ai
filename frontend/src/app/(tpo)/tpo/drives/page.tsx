@@ -718,7 +718,7 @@ function ScheduleRoundModal({
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-white font-bold text-lg">Create interview round</h2>
-            <p className="text-white/40 text-sm mt-0.5">Set the date window — the scheduling agent proposes slots, then checks them</p>
+            <p className="text-white/40 text-sm mt-0.5">Set the date window — slots are proposed, then checked against every other drive</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -829,7 +829,7 @@ function ScheduleRoundModal({
             {scheduling ? (
               <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Scheduling…</>
             ) : (
-              <><Calendar size={15} /> Start the scheduling agent</>
+              <><Calendar size={15} /> Build the schedule</>
             )}
           </button>
         </div>
