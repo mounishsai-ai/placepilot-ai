@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.agents.schedule_tools import schedule_round
 from app.database import get_db, async_session_factory
 from app.models import (
     InterviewRound, InterviewSlot, Room, PanelMember,
@@ -74,83 +75,43 @@ async def create_round(
     return {"id": round_.id, "round_no": round_.round_no}
 
 
-async def _run_schedule_agent_bg(run_id: str, drive_id: str):
-    """Runs in background with its OWN DB session (request session will be closed)."""
-    async with async_session_factory() as db:
-        try:
-            await orchestrator.execute_run(db, run_id, drive_id)
-        except Exception as e:
-            logger.error(f"Schedule agent run {run_id} failed for drive {drive_id}: {e}")
-
-
 @router.post("/rounds/{round_id}/run-agent")
 async def run_schedule_agent(
     round_id: str,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _: object = Depends(require_role(UserRole.TPO)),
 ):
-    """Start the scheduling agent for this round: it proposes a schedule,
-    validates it against every other interview already on the calendar, and
-    re-plans until clean (or asks the TPO) before committing — see CLAUDE.md.
-    Runs in the background; progress shows up in the same live trace as the
-    shortlist agent, keyed off the same drive_id.
+    """Schedule this round: propose, validate against the whole calendar,
+    re-plan on conflict, commit only when clean.
 
-    Replaces the old auto-schedule endpoint, which wrote slots straight from
-    allocate_slots() with no check against other rounds' bookings at all."""
+    Runs inline and returns the outcome, rather than starting a background
+    agent. The model never allocated anything here — allocation is first-come
+    first-served Python and conflict detection is a SQL overlap check. It only
+    chose what to retry after a failure, and that choice is a closed set: drop
+    the contested resource, or widen the window. Writing it out removes a
+    round trip per attempt, cannot hit a rate limit, and gives the same answer
+    every time.
+
+    The path name is kept so existing callers keep working.
+    """
     round_result = await db.execute(select(InterviewRound).where(InterviewRound.id == round_id))
     round_ = round_result.scalar_one_or_none()
     if not round_:
         raise HTTPException(status_code=404, detail="Round not found")
 
-    matches_result = await db.execute(
-        select(MatchScore.student_id)
-        .where(MatchScore.drive_id == round_.drive_id, MatchScore.shortlisted == True)
-    )
-    if not matches_result.first():
-        raise HTTPException(
-            status_code=400,
-            detail="No shortlisted students for this drive. Approve a shortlist first, then schedule.",
-        )
+    outcome = await schedule_round(db, round_.drive_id, round_id)
+    if not outcome.get("ok"):
+        raise HTTPException(status_code=422, detail=outcome.get("reason", "Could not build a schedule."))
 
-    # One agent per drive at a time. Nothing enforced this, so every click
-    # started another orchestrator loop against the same drive — and when the
-    # UI gave no sign a run had begun, clicking again was the obvious thing to
-    # do. Four concurrent loops went out in one minute and exhausted the
-    # model's per-minute quota, which then read as "the button is broken".
-    #
-    # Returning the run already in flight rather than erroring: pressing the
-    # button twice should land you on the same run, not on a failure.
-    active = await db.execute(
-        select(AgentRun)
-        .where(
-            AgentRun.drive_id == round_.drive_id,
-            AgentRun.status.in_([AgentRunStatus.RUNNING, AgentRunStatus.PAUSED]),
-        )
-        .order_by(AgentRun.created_at.desc())
-        .limit(1)
-    )
-    existing = active.scalar_one_or_none()
-    if existing:
-        return {
-            "message": (
-                "This drive already has an agent waiting for you."
-                if existing.status == AgentRunStatus.PAUSED
-                else "The scheduling agent is already running for this drive."
-            ),
-            "drive_id": round_.drive_id,
-            "round_id": round_id,
-            "run_id": existing.id,
-            "already_running": True,
-        }
-
-    run = await orchestrator.create_run(db, round_.drive_id, kind="schedule", round_id=round_id)
-    background_tasks.add_task(_run_schedule_agent_bg, run.id, round_.drive_id)
     return {
-        "message": "Scheduling agent started",
+        "message": (
+            f"Scheduled {outcome['scheduled']} of {outcome['total_students']} students."
+            + (f" {outcome['unscheduled']} did not fit in the window."
+               if outcome["unscheduled"] else "")
+        ),
         "drive_id": round_.drive_id,
         "round_id": round_id,
-        "run_id": run.id,
+        **outcome,
     }
 
 

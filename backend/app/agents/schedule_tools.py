@@ -14,7 +14,7 @@ wrong, never how to fix it.
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -298,3 +298,142 @@ SCHEDULE_TOOL_EXECUTORS = {
     "commit_schedule": _exec_commit_schedule,
     "ask_human": _exec_ask_human,
 }
+
+
+# ─── Deterministic scheduling ────────────────────────────────────────────────
+
+# Ceilings, not tuning knobs. Each exists because the loop below can otherwise
+# spin: excluding a conflicting resource frees the slot for the next student,
+# who may conflict with something else, and extending a window that is already
+# too short by hours converges very slowly.
+_MAX_ATTEMPTS = 6
+_EXTEND_STEP_MIN = 120
+_MAX_EXTEND_MIN = 480
+
+
+async def schedule_round(db: AsyncSession, drive_id: str, round_id: str) -> dict:
+    """Propose, validate, re-plan and commit a round's schedule — no model.
+
+    The model never allocated anything here. propose_schedule is first-come
+    first-served Python, validate_schedule is a SQL overlap check, and
+    commit_schedule writes rows; the model only chose what to retry after a
+    failure. That choice is a short, closed set — drop the conflicting
+    resource, or widen the window — so it is written out here instead, which
+    removes a round trip per attempt and makes the outcome repeatable.
+
+    What survives unchanged is the part that was always the real work:
+    validate_schedule checks a proposal against every slot already committed
+    across every other drive and round, which the allocator cannot do because
+    it only ever sees the students in front of it.
+
+    Commits a clean schedule, or commits nothing and reports why.
+    """
+    ctx = ScheduleContext(db, drive_id, round_id)
+
+    context = await _exec_get_schedule_context(ctx, {})
+    if "error" in context:
+        return {"ok": False, "reason": context["error"]}
+
+    # Guard the inputs before allocating. Each of these produces either an empty
+    # schedule or a nonsensical one, and all are far clearer caught here than
+    # inferred from a result of zero slots.
+    round_ = ctx.round
+    if not ctx.student_ids:
+        return {"ok": False, "reason": "No shortlisted students for this drive. Approve a shortlist first."}
+    if not ctx.panels:
+        return {"ok": False, "reason": "No panel members are available for this company."}
+    if not ctx.rooms:
+        mode = round_.mode if round_ else "offline"
+        return {"ok": False, "reason": f"No {'virtual' if mode == 'online' else 'physical'} rooms are available."}
+    if not round_ or not round_.start_datetime or not round_.end_datetime:
+        return {"ok": False, "reason": "This round has no interview window set."}
+    if round_.end_datetime <= round_.start_datetime:
+        return {"ok": False, "reason": "The round ends before it starts — check the date window."}
+    if not round_.slot_duration_min or round_.slot_duration_min <= 0:
+        return {"ok": False, "reason": "Slot duration must be greater than zero."}
+
+    # Re-running a round replaces its schedule rather than adding a second one
+    # alongside it. Without this a retry doubles every slot, and the validator
+    # would not object: it deliberately ignores this round's own rows.
+    await db.execute(delete(InterviewSlot).where(InterviewSlot.round_id == round_id))
+    await db.commit()
+
+    exclude_panels: set[str] = set()
+    exclude_rooms: set[str] = set()
+    extend_minutes = 0
+    attempts: list[dict] = []
+
+    for _ in range(_MAX_ATTEMPTS):
+        proposal = await _exec_propose_schedule(ctx, {
+            "exclude_panel_ids": list(exclude_panels),
+            "exclude_room_ids": list(exclude_rooms),
+            "extend_minutes": extend_minutes,
+        })
+        if "error" in proposal:
+            return {"ok": False, "reason": proposal["error"], "attempts": attempts}
+
+        check = await _exec_validate_schedule(ctx, {})
+        attempts.append({
+            "proposed": proposal["proposed_count"],
+            "unscheduled": proposal["unscheduled_count"],
+            "violations": check.get("violation_count", 0),
+            "extended_minutes": extend_minutes,
+        })
+
+        if check.get("clean"):
+            # Nothing conflicts. Widen the window if that would seat more
+            # people, otherwise take this schedule.
+            if ctx.unscheduled and extend_minutes < _MAX_EXTEND_MIN:
+                extend_minutes = min(extend_minutes + _EXTEND_STEP_MIN, _MAX_EXTEND_MIN)
+                continue
+            break
+
+        # Conflicts are always against another drive's committed slots, so the
+        # fix is to stop using the contested resource. Drop every panel and room
+        # named in the violations at once rather than one per attempt.
+        before = (len(exclude_panels), len(exclude_rooms))
+        for v in ctx.last_violations or []:
+            if v.get("panel_id"):
+                exclude_panels.add(v["panel_id"])
+            if v.get("room_id"):
+                exclude_rooms.add(v["room_id"])
+
+        if (len(exclude_panels), len(exclude_rooms)) == before:
+            # Violations that name no resource cannot be routed around.
+            return {
+                "ok": False,
+                "reason": "The schedule conflicts with interviews on another drive and could not be re-planned.",
+                "violations": (ctx.last_violations or [])[:5],
+                "attempts": attempts,
+            }
+        if len(exclude_panels) >= len(ctx.panels) or len(exclude_rooms) >= len(ctx.rooms):
+            return {
+                "ok": False,
+                "reason": "Every panel or room is already booked against another drive in this window. "
+                          "Pick a different date, or free a panel up.",
+                "attempts": attempts,
+            }
+
+    if not ctx.proposed_slots:
+        return {"ok": False, "reason": "No slots could be allocated in this window.", "attempts": attempts}
+    if ctx.last_violations:
+        return {
+            "ok": False,
+            "reason": f"Still {len(ctx.last_violations)} conflict(s) after {len(attempts)} attempts. "
+                      "Widen the window or free a panel up.",
+            "violations": ctx.last_violations[:5],
+            "attempts": attempts,
+        }
+
+    committed = await _exec_commit_schedule(ctx, {})
+    if "error" in committed:
+        return {"ok": False, "reason": committed["error"], "attempts": attempts}
+
+    return {
+        "ok": True,
+        "scheduled": committed["committed_count"],
+        "unscheduled": committed["unscheduled_count"],
+        "total_students": len(ctx.student_ids),
+        "extended_minutes": extend_minutes,
+        "attempts": attempts,
+    }
