@@ -156,7 +156,7 @@ async def index_students_for_drive(
 
     # Hard ceiling on the API-key path, not a tuning choice: batchEmbedContents
     # rejects anything over 100 with "at most 100 requests can be in one batch".
-    # 200 worked on Vertex's :predict, which has no such limit — so this
+    # 200 worked on Gemini Enterprise's :predict, which has no such limit — so this
     # silently started 400ing when the backend moved, and every batch fell
     # through to TF-IDF with nothing on screen to say ranking had degraded.
     BATCH_SIZE = MAX_EMBED_BATCH

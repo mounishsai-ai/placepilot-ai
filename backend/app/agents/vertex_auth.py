@@ -1,7 +1,8 @@
-"""Shared ADC token helper for calling Vertex AI directly over REST.
+"""Shared ADC token helper for calling the Gemini Enterprise Agent Platform
+(Google Cloud's platform, called Vertex AI until Cloud Next 2026) over REST.
 
 Used by matcher_agent.py (embeddings) and orchestrator.py (function-calling
-generation) — both need a project-billed Vertex call, not the free per-API-key
+generation) — both need a project-billed call, not the free per-API-key
 generativelanguage.googleapis.com path.
 """
 import google.auth

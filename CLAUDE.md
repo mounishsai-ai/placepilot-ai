@@ -37,18 +37,18 @@ understand, not just be told.
   loop was built and verified on 2.5-flash, but that model is retired on this
   endpoint and 404s for keys issued after its cutoff. Don't "restore" it.
   `gemini-3.5-flash` / `-flash-lite` for JD parsing and match explanations.
-- **Vertex is optional and opt-in** (`LLM_BACKEND=vertex` + `GCP_PROJECT_ID`
+- **Gemini Enterprise is optional and opt-in** (`LLM_BACKEND=vertex` + `GCP_PROJECT_ID`
   + ADC). Removed 2026-09-06 and restored the same day: the free key tier 429s
   partway through a single drive, which made it impossible to record a demo.
-  Vertex bills quota to the project instead. The platform was renamed the
+  Gemini Enterprise bills quota to the project instead. The platform was renamed the
   Gemini Enterprise Agent Platform at Cloud Next 2026, but
   `aiplatform.googleapis.com` is unchanged.
 - **`docker-compose.override.yml` (gitignored) is what puts this machine on
-  Vertex** — it mounts the host's ADC file into the container and pins
+  Gemini Enterprise** — it mounts the host's ADC file into the container and pins
   `LLM_BACKEND=vertex`. Nobody cloning the repo has those credentials, which is
   why it is not in `docker-compose.yml`.
 - **Embedding batches cap at 100 on the key path** (`MAX_EMBED_BATCH`).
-  Vertex's `:predict` has no such limit; 200 was tuned for it and made every
+  Gemini Enterprise's `:predict` has no such limit; 200 was tuned for it and made every
   key-path batch 400. Ranking falls back to TF-IDF on any exception, so this
   degraded shortlists silently — `matching_complete` now carries
   `ranking_method`.
@@ -115,7 +115,7 @@ cd frontend && NEXT_PUBLIC_API_URL=https://placement-backend-891885517174.us-cen
 
 ## Architecture — the agentic core
 `orchestrator.py` is one generic agent-loop engine (Gemini function calling
-over Vertex) dispatched by a **`kind`** string stored in `AgentRun.state_json`
+over Gemini Enterprise) dispatched by a **`kind`** string stored in `AgentRun.state_json`
 (not a DB column — no migration path, see above):
 - **`"shortlist"`** (`tools.py`): `get_drive_context → parse_jd →
   check_eligibility → rank_candidates → ask_human`. Model picks the tool and
@@ -199,7 +199,7 @@ self-proposed eligibility rules.
 | "What do the sub-agents do?" | Specialists with their own tools/prompts. The Auditor's whole job is to disagree with the others — it checks the shortlist's real numbers before a human signs off. |
 | "What happens when it gets something wrong?" | Watch the scheduler: it proposes, validates against the whole calendar, and re-plans on its own when it finds a conflict — then tells you what it traded off. |
 | "Where's the human in the loop?" | `ask_human` is a tool the agent chooses to call, not a hardcoded gate — and it's a durable pause: the run survives a container restart. |
-| "Is it production-grade?" | JWT auth, 4 roles, WebSocket auth, authenticated résumés, deployed on Cloud Run + Cloud SQL + Vertex AI. |
+| "Is it production-grade?" | JWT auth, 4 roles, WebSocket auth, authenticated résumés, deployed on Cloud Run + Cloud SQL + Gemini Enterprise Agent Platform. |
 | "Can it answer something you didn't pre-build a screen for?" | The Analyst Agent — ask it any placement-data question, it writes the SQL live, shows it to you, runs it read-only, and answers from the real rows. |
 
 ## Doc map

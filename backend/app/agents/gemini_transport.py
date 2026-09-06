@@ -14,7 +14,7 @@ Two backends serve the same models and this module hides the difference:
 
 `generateContent` takes byte-identical request and response JSON on both, so
 callers just ask for a target (URL + headers) and post their existing payload.
-Embeddings do NOT: Vertex uses :predict with an `instances` list, AI Studio
+Embeddings do NOT: Gemini Enterprise uses :predict with an `instances` list, AI Studio
 uses :batchEmbedContents with a `requests` list, and the responses nest the
 vector differently. `embed_texts` normalises both to a plain list of vectors.
 
@@ -41,7 +41,7 @@ _AISTUDIO_GENERATE = "https://generativelanguage.googleapis.com/v1beta/models/{m
 _AISTUDIO_EMBED = "https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents"
 
 # batchEmbedContents refuses more than 100 per call ("at most 100 requests can
-# be in one batch"). Vertex's :predict has no such cap, but one number that
+# be in one batch"). Gemini Enterprise's :predict has no such cap, but one number that
 # works on both is worth more than squeezing a few calls out of one path.
 MAX_EMBED_BATCH = 100
 
@@ -72,7 +72,7 @@ def resolve_backend() -> str:
     """Return "aistudio" or "vertex".
 
     LLM_BACKEND pins it. On "auto" the API key wins whenever one is set, because
-    that is the path a clone of this repo can actually authenticate; Vertex is
+    that is the path a clone of this repo can actually authenticate; the other is
     opt-in for the one machine that has a project.
     """
     choice = (settings.LLM_BACKEND or "auto").strip().lower()

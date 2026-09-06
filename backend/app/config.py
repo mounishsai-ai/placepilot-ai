@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # after its cutoff. Verified doing function calling on this endpoint.
     ORCHESTRATOR_MODEL: str = "gemini-3.5-flash"
 
-    # ── Optional Vertex AI path ──────────────────────────────────────────────
+    # ── Optional Gemini Enterprise Agent Platform path ───────────────────────
     # "auto" (default) uses GEMINI_API_KEY whenever one is set, because that is
     # what a clone of this repo can authenticate. Set LLM_BACKEND=vertex, plus a
     # project with ADC available, to bill quota to that project instead — the
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     LLM_BACKEND: str = "auto"
     GCP_PROJECT_ID: str = ""
     VERTEX_EMBEDDING_LOCATION: str = "us-central1"
-    # Vertex still serves gemini-2.5-flash, which is what the loop was built and
+    # That platform still serves gemini-2.5-flash, which is what the loop was built and
     # verified against, so that path keeps it.
     VERTEX_ORCHESTRATOR_MODEL: str = "gemini-2.5-flash"
 

@@ -137,23 +137,23 @@ developed on.
 ### Two backends behind one interface
 
 The same models are reachable two ways: an **API key** against
-`generativelanguage.googleapis.com`, or **Vertex AI** (since renamed the Gemini
-Enterprise Agent Platform) with a Google Cloud bearer token. `LLM_BACKEND`
+`generativelanguage.googleapis.com`, or **Gemini Enterprise Agent Platform** (Google Cloud's
+platform, called Vertex AI until Cloud Next 2026) with a Google Cloud bearer token. `LLM_BACKEND`
 picks; the default uses the key whenever one is set, because that is what a
-clone of this repo can authenticate. Vertex is opt-in, and worth it only
+clone of this repo can authenticate. Gemini Enterprise is opt-in, and worth it only
 because the free key tier is tight enough to 429 partway through one drive.
 
 `gemini_transport.py` is the only module that knows which is which. The two are
 less symmetric than they look:
 
 - **`generateContent` is byte-identical** on both, so the agent loop needed no changes.
-- **Embeddings are not.** Vertex uses `:predict` with an `instances` list; the key
+- **Embeddings are not.** Gemini Enterprise uses `:predict` with an `instances` list; the key
   path uses `:batchEmbedContents` with a `requests` list, nests the vector
-  differently, and caps a batch at 100 where Vertex has no limit.
+  differently, and caps a batch at 100 where Gemini Enterprise has no limit.
 - **The models differ.** `gemini-2.5-flash` is what the loop was verified on and
-  Vertex still serves it, but it is retired on the key endpoint.
+  Gemini Enterprise still serves it, but it is retired on the key endpoint.
 
-That embedding asymmetry caused a real bug: a batch size tuned for Vertex made
+That embedding asymmetry caused a real bug: a batch size tuned for Gemini Enterprise made
 every call 400 on the key path, and since ranking falls back to TF-IDF on any
 exception, shortlists silently degraded from semantic to keyword matching with
 nothing on screen to say so. The trace now records which ranking actually ran.
