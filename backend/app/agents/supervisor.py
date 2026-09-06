@@ -113,8 +113,15 @@ async def node_match_candidates(state: PlacementState) -> dict:
     students_by_id = {s["id"]: s for s in eligible}
     matches = await generate_all_explanations(matches, students_by_id, jd_parsed)
 
+    # embedded_ok was computed and thrown away. When embeddings fail the run
+    # keeps going on TF-IDF, which is a real fallback and not a stub — but a
+    # shortlist ranked by keyword overlap is not the same artifact as one
+    # ranked by semantic similarity, and nothing on screen said which had
+    # happened. Now the trace does.
     event = await _emit(state, "matching_complete", "matcher_agent", {
         "candidates_ranked": len(matches),
+        "ranking_method": "embeddings" if embedded_ok else "tf-idf",
+        "degraded": not embedded_ok,
     })
     return {
         "match_results": matches,

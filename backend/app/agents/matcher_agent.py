@@ -154,10 +154,12 @@ async def index_students_for_drive(
         for s in students
     ]
 
-    # The API accepted all 201 students in a single embedding call in ~9s when
-    # tested live — batches of 200 mean a typical drive needs just 1-2 calls
-    # instead of the 11 that used to blow through the per-minute quota.
-    BATCH_SIZE = 200
+    # Hard ceiling, not a tuning choice: batchEmbedContents rejects anything
+    # over 100 with "at most 100 requests can be in one batch". 200 worked on
+    # Vertex's :predict endpoint, which had no such limit — so this silently
+    # started 400ing when the backend moved, and every batch fell through to
+    # the TF-IDF path with nothing on screen to say ranking had degraded.
+    BATCH_SIZE = 100
     embedded_ok = True
     for i in range(0, len(texts), BATCH_SIZE):
         batch_texts = texts[i: i + BATCH_SIZE]

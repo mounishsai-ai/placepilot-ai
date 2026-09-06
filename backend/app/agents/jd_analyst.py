@@ -64,7 +64,12 @@ async def _generate_content(
     for attempt in range(retries + 1):
         try:
             async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(url, params={"key": settings.GEMINI_API_KEY}, json=payload)
+                # Header, not params: httpx puts the query string in the exception
+                # message, so a key passed as ?key=... lands in the logs on every
+                # failed call.
+                resp = await client.post(
+                    url, headers={"x-goog-api-key": settings.GEMINI_API_KEY}, json=payload
+                )
                 resp.raise_for_status()
                 data = resp.json()
                 return data["candidates"][0]["content"]["parts"][0]["text"]
