@@ -90,13 +90,17 @@ TOOL_DECLARATIONS = [
     {
         "name": "select_candidates",
         "description": (
-            "Find students matching one plain criterion and propose them for the shortlist — for "
-            "when the TPO names a specific person or rule (\"approve anyone with 99%+ attendance\", "
-            "\"include Rahul Sharma\", \"add students within 0.5 CGPA of the cutoff even though they "
-            "didn't pass eligibility\"). Searches the FULL student roster, not just students who "
-            "passed check_eligibility — this is how a TPO overrides the automatic cutoff for a "
-            "specific person or group. Matches are proposed and pre-checked for the TPO to confirm on "
-            "the shortlist review screen; this never finalizes anything by itself.\n\n"
+            "Find students matching one plain criterion and propose them for the shortlist "
+            "— for when the TPO names a specific person or rule ('approve anyone with 99%+ "
+            "attendance', 'include Rahul Sharma', 'add students within 0.5 CGPA of the cutoff "
+            "even though they did not pass eligibility'). "
+            "SCOPE — these differ and it matters. By name or roll_no the search covers the "
+            "FULL student roster, which is how a TPO overrides the automatic cutoff for one "
+            "person. Any other field (cgpa, branch, attendance_pct, backlogs_active) searches "
+            "ONLY the candidates already ranked for this drive, so a group rule narrows the "
+            "shortlist instead of pulling in students never read against this job description. "
+            "Matches are proposed and pre-checked for the TPO to confirm on the shortlist "
+            "review screen; this never finalizes anything by itself. "
             "By name, use 'contains' with just what the TPO typed (first name alone is fine — do not "
             "require a surname or exact match). If that matches MORE THAN ONE student, nobody is added "
             "yet — the result comes back with each candidate's name, roll_no, branch, and cgpa. Call "
@@ -414,6 +418,15 @@ _SELECT_FIELD_TYPES: dict[str, type] = {
 }
 _SELECT_OPS = {"gte", "lte", "gt", "lt", "eq", "contains"}
 
+# Naming one person is an override; describing a group is a filter, and the two
+# must not search the same pool. "roll_no eq 21CS042" is the TPO saying they
+# know better than the eligibility check about that student. "cgpa gt 8" over
+# the whole college is not — it pulls in people never read against this JD, who
+# have no score and no ranking, and it produces answers that contradict each
+# other: above-8 across 201 students is a bigger number than above-7 among the
+# candidates actually ranked for the drive.
+_IDENTITY_FIELDS = {"name", "roll_no"}
+
 
 def _select_filter(students: list[dict], field: str, op: str, value: str) -> list[dict]:
     caster = _SELECT_FIELD_TYPES[field]
@@ -450,14 +463,33 @@ async def _exec_select_candidates(ctx: ToolContext, args: dict) -> dict:
     if op not in _SELECT_OPS:
         return {"error": f"unknown op {op!r} — use one of {sorted(_SELECT_OPS)}"}
 
-    # Deliberately the FULL roster, not ctx.eligible_students — this tool's
-    # entire purpose is letting the TPO pull in someone the automatic
-    # eligibility check excluded.
     if not ctx.all_students:
         ctx.all_students = await _load_students(ctx.db)
-    matches = _select_filter(ctx.all_students, field, op, str(value))
+
+    # Identity fields may reach the whole college — that is the override this
+    # tool exists for. Attribute filters are confined to the students already
+    # ranked for this drive, so a group selection can only ever narrow the
+    # candidate pool, never invent one.
+    if field in _IDENTITY_FIELDS:
+        pool = ctx.all_students
+        pool_label = "all students"
+    else:
+        ranked_result = await ctx.db.execute(
+            select(MatchScore.student_id).where(MatchScore.drive_id == ctx.drive_id)
+        )
+        ranked_ids = {row[0] for row in ranked_result.all()}
+        pool = [s for s in ctx.all_students if s["id"] in ranked_ids]
+        pool_label = "candidates ranked for this drive"
+        if not pool:
+            return {
+                "error": "No candidates have been ranked for this drive yet, so there is "
+                         "nothing to filter. Run rank_candidates first, or name a specific "
+                         "student by roll number.",
+            }
+
+    matches = _select_filter(pool, field, op, str(value))
     if not matches:
-        return {"matched_count": 0, "names": []}
+        return {"matched_count": 0, "names": [], "searched": pool_label, "pool_size": len(pool)}
 
     # A name is meant to pick ONE specific person — unlike every other field,
     # more than one hit means genuine ambiguity (two students can share a
@@ -490,7 +522,7 @@ async def _exec_select_candidates(ctx: ToolContext, args: dict) -> dict:
     )
     next_rank = (max_rank_result.scalar() or 0) + 1
 
-    note = f"Proposed per TPO request: {field} {op} {value}"
+    note = f"Proposed per TPO request: {field} {op} {value} (from {pool_label})"
     added, updated = [], []
     for s in matches:
         existing = existing_by_student.get(s["id"])
