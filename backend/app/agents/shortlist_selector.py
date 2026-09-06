@@ -46,10 +46,16 @@ students who have them.
 
 Rules:
 - Use null for anything the instruction does not mention. Do not invent thresholds.
-- top_n counts from the best-ranked candidate downwards.
 - Branch codes are short and uppercase: CSE, IT, ECE, EEE, ME, CE, MCA.
-- If the instruction is not about filtering a shortlist at all, return
-  {"action": "replace", "summary": "", "unclear": true} and no filter fields.
+- top_n is a count of students, applied within whichever action is chosen. A bare
+  quantity IS a valid instruction — do not call it unclear:
+    "10 more"            -> {"action":"add","top_n":10}
+    "another 40"         -> {"action":"add","top_n":40}
+    "just the top 15"    -> {"action":"keep","top_n":15}
+    "shortlist 25"       -> {"action":"replace","top_n":25}
+  "more" and "another" always mean add, never replace.
+- Only return {"action":"replace","summary":"","unclear":true} when the text is not
+  an instruction about the shortlist at all ("how are you", "abc").
 """
 
 _BRANCH_MAX = 12
@@ -77,9 +83,21 @@ def apply_spec(spec: dict, candidates: list[dict], already: set[str]) -> tuple[s
     min_cgpa, max_cgpa = _as_number(spec.get("min_cgpa")), _as_number(spec.get("max_cgpa"))
     max_backlogs, top_n = _as_int(spec.get("max_backlogs")), _as_int(spec.get("top_n"))
 
+    # Which candidates the filter runs over depends on the action, and this is
+    # what makes "10 more" mean the next ten rather than the top ten. Counting
+    # top_n over the whole list would re-pick people who are already selected,
+    # so a union adds nobody and the instruction appears to do nothing.
+    action = str(spec.get("action") or "replace").lower()
     ordered = sorted(candidates, key=lambda c: c.get("rank") or 10**6)
+    if action == "add":
+        scope = [c for c in ordered if str(c["student_id"]) not in already]
+    elif action == "keep":
+        scope = [c for c in ordered if str(c["student_id"]) in already]
+    else:
+        scope = ordered
+
     matched: list[str] = []
-    for c in ordered:
+    for c in scope:
         if branches and str(c.get("branch") or "").strip().upper() not in branches:
             continue
         cgpa = _as_number(c.get("cgpa"))
@@ -95,12 +113,11 @@ def apply_spec(spec: dict, candidates: list[dict], already: set[str]) -> tuple[s
         if top_n is not None and len(matched) >= top_n:
             break
 
-    # The filter always describes who should remain, so the three actions are
-    # just set operations on it. An action meaning "remove everyone matching"
-    # reads naturally in English and inverts in code: "drop anyone with active
-    # backlogs" produces the filter max_backlogs=0, and subtracting that set
-    # removes precisely the students the TPO wanted to keep.
-    action = str(spec.get("action") or "replace").lower()
+    # The filter always describes who should remain, so the actions are set
+    # operations on it. Note there is deliberately no "remove": that reads fine
+    # in English and inverts in code — "drop anyone with active backlogs" gives
+    # the filter max_backlogs=0, and subtracting that removes precisely the
+    # students the TPO wanted to keep.
     if action == "add":
         return already | set(matched), "add"
     if action == "keep":
@@ -126,6 +143,12 @@ async def select_by_instruction(instruction: str, candidates: list[dict], alread
                          "a backlog limit, or how many to take."}
 
     selected, action = apply_spec(spec, candidates, already)
+    # The instruction, the spec it became, and the size change — without these
+    # a report of "it selected the wrong number" cannot be diagnosed from logs.
+    logger.info(
+        "shortlist_selector: {!r} -> {} | {} selected -> {}",
+        instruction[:120], spec, len(already), len(selected),
+    )
     return {
         "student_ids": sorted(selected),
         "count": len(selected),
