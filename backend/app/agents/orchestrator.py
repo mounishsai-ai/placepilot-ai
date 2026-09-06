@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.models import AgentRun, AgentRunStatus, AgentTrace, PlacementDrive, DriveStatus
+from app.models.models import AgentRun, AgentRunStatus, AgentTrace, DriveStatus
 from app.agents.tools import ToolContext, TOOL_DECLARATIONS, TOOL_EXECUTORS
 from app.agents.auditor_agent import audit_pipeline
 from app.agents.gemini_transport import generate_content_target, orchestrator_model

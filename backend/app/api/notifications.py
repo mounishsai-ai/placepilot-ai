@@ -2,7 +2,7 @@
 Notifications API — delivery tracking and offline queue management.
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update

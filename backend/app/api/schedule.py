@@ -3,25 +3,20 @@ Schedule API — interview rounds, slots, panel, and room management.
 """
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.agents.schedule_tools import schedule_round
-from app.database import get_db, async_session_factory
+from app.database import get_db
 from app.models import (
-    InterviewRound, InterviewSlot, Room, PanelMember,
-    PanelAvailability, PlacementDrive, RoundType, UserRole,
-    MatchScore, User, Student, SessionNote, Company,
-    SlotStatus, DriveStatus, AgentRun, AgentRunStatus, AgentTrace,
+    InterviewRound, InterviewSlot, PanelMember, PlacementDrive, RoundType, UserRole, MatchScore, User, Student, SessionNote,
 )
 from app.api.auth import get_current_user, require_role
 from app.agents.scheduler_agent import detect_all_conflicts
 from app.agents.panel_agent import generate_prep_brief, structure_debrief, polish_session_note
-from app.agents import orchestrator
-from loguru import logger
 
 router = APIRouter()
 

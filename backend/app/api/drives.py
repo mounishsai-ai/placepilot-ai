@@ -1,7 +1,6 @@
 """
 Drives API — full lifecycle from JD upload through completion.
 """
-import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, status
 from pydantic import BaseModel
@@ -19,7 +18,7 @@ from app.api.auth import get_current_user, require_role
 from app.api.websocket import emit_agent_event
 from app.agents.jd_analyst import jd_text_is_plausible
 from app.agents.shortlist_selector import select_by_instruction
-from app.agents.supervisor import run_placement_pipeline, resume_pipeline
+from app.agents.supervisor import run_placement_pipeline
 from app.agents import orchestrator
 from app.config import settings
 from loguru import logger

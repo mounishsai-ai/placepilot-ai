@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 from jose import JWTError, jwt
-import os, uuid, aiofiles
+import os, aiofiles
 from datetime import datetime
 
 from app.database import get_db
