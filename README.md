@@ -38,9 +38,9 @@ solved.
 
 An agent that pauses to ask a human a question has a state problem. The run is
 mid-conversation with the model: there is a message history, a pending tool call,
-and a partially-built result. On Cloud Run the container serving that run can be
-recycled at any moment, and the next request may land on a different instance
-entirely.
+and a partially-built result. On any container platform the process serving that
+run can be recycled at any moment, and the next request may land on a different
+instance entirely.
 
 Holding that state in memory means the pause is a lie — the run dies silently and
 the TPO waits forever for a question that no longer exists.
@@ -127,6 +127,7 @@ it. The scheduling profile went the same way, for the same reason.
 | **Analyst Agent** | Plain-English question → generated SQL → **validated in Python** (single `SELECT` only, table allowlist, PII column blocklist, no `SELECT *`, forced `LIMIT`) → executed read-only → answered from the rows actually returned. TPO only. |
 | **Panel Agent** | Briefs an interviewer before a slot, structures their debrief after, and cleans up voice-dictated notes. |
 | **Onyx** | A free-text assistant reachable from anywhere in the TPO portal. It has no data access of its own — its single tool hands the question to the Analyst. No `ask_human` pause, because the human is already in the conversation. |
+| **Shortlist selector** | "Top 15 CSE and IT students with CGPA above 7.5" → a filter spec, **applied in Python**. The model never sees the candidates and never names a student, so who gets shortlisted stays repeatable and auditable. It moves checkboxes; the TPO still approves. |
 
 ### Models, and why
 
@@ -246,9 +247,8 @@ runtime — a production build without them ships a frontend that cannot reach t
 
 ### Deployment
 
-It was built and run on Google Cloud Run with Cloud SQL. Nothing in the code
-requires that: it needs a container runtime, a Postgres database and an API
-key, so it deploys anywhere that offers the three.
+Nothing here is tied to a particular host: it needs a container runtime, a
+Postgres database and an API key, so it deploys anywhere that offers the three.
 
 There is no hosted instance to visit. A demo running on trial credits stops
 working the moment they lapse, and a dead link is worse than none — so the
@@ -305,7 +305,8 @@ simultaneous use.
 JWT auth, WebSockets
 **Frontend** — Next.js 14 (App Router), TypeScript, Tailwind, Framer Motion, Recharts,
 React Three Fiber
-**Infrastructure** — Google Cloud Run, Cloud SQL, Artifact Registry
+**Runs on** — Docker Compose (Postgres + API + frontend), or any container
+runtime with a Postgres and a Gemini API key
 
 ## Layout
 
@@ -314,7 +315,8 @@ backend/app/
   agents/          orchestrator loop, tool registries, one-shot specialists
     orchestrator.py    the single function-calling engine + agent profiles
     tools.py           shortlist tool registry
-    schedule_tools.py  scheduling tools, incl. the cross-drive validator
+    schedule_tools.py  the deterministic scheduler + cross-drive validator
+    shortlist_selector.py  plain-English instruction -> filter spec
     auditor_agent.py, analyst_agent.py, panel_agent.py
     gemini_json.py     shared one-shot JSON helper
     gemini_transport.py  where a Gemini call goes and how it authenticates
@@ -327,5 +329,5 @@ frontend/src/
 
 ## Author
 
-Built by **N. Mounish Sai** — design, backend, agent architecture, frontend and
-deployment. Solo project.
+Built by **N. Mounish Sai** — design, backend, agent architecture and
+frontend. Solo project.
