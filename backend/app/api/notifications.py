@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 
 from sqlalchemy.orm import selectinload
 
-from app.database import get_db
+from app.database import get_db, async_session_factory
 from app.models import Notification, Student, NotificationChannel, UserRole
 from app.api.auth import get_current_user, require_role
 from app.agents.notifier_agent import notify_student, bulk_notify
@@ -41,29 +41,35 @@ async def send_notifications(
     ]
 
     async def _send_and_persist():
-        results = await bulk_notify(
-            students_dict,
-            body.template_id,
-            lambda s: body.data,
-            body.channels,
-        )
-        # Persist to DB. body.data is the free-form payload the compose form
-        # sends ({"subject": ..., "body": ...} today) — store it as real
-        # subject/message columns, not str(dict), or the notification list
-        # renders the Python repr verbatim (observed live 2026-08-28).
-        subject = str(body.data.get("subject") or body.template_id or "Notification")
-        message = str(body.data.get("body") or body.data.get("message") or "")
-        for r in results:
-            notif = Notification(
-                student_id=r["student_id"],
-                channel=NotificationChannel.EMAIL,
-                subject=subject,
-                message=message,
-                template_id=body.template_id,
-                status=r["status"],
+        # Its own session, not the request's. FastAPI closes the injected one
+        # when the response returns, and this task then holds that connection
+        # for the whole of bulk_notify — hundreds of slow provider calls. With
+        # a pool of twelve, two of these exhausted it and every other endpoint
+        # started timing out with "QueuePool limit reached", which looks like
+        # an unrelated page being broken.
+        async with async_session_factory() as db:
+            results = await bulk_notify(
+                students_dict,
+                body.template_id,
+                lambda s: body.data,
+                body.channels,
             )
-            db.add(notif)
-        await db.commit()
+            # Persist to DB. body.data is the free-form payload the compose
+            # form sends ({"subject": ..., "body": ...} today) — store it as
+            # real subject/message columns, not str(dict), or the notification
+            # list renders the Python repr verbatim (observed live 2026-08-28).
+            subject = str(body.data.get("subject") or body.template_id or "Notification")
+            message = str(body.data.get("body") or body.data.get("message") or "")
+            for r in results:
+                db.add(Notification(
+                    student_id=r["student_id"],
+                    channel=NotificationChannel.EMAIL,
+                    subject=subject,
+                    message=message,
+                    template_id=body.template_id,
+                    status=r["status"],
+                ))
+            await db.commit()
 
     background_tasks.add_task(_send_and_persist)
     return {"message": f"Queued notifications for {len(students)} students"}

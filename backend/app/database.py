@@ -4,7 +4,10 @@ from app.config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.APP_ENV == "development",
+    # Off by default even in development: SQLAlchemy's echo prints every
+    # statement and every bound parameter, which buries real log lines and
+    # measurably slows bulk work. Set SQL_ECHO=true when you actually want it.
+    echo=settings.SQL_ECHO,
     pool_pre_ping=True,
     # Cloud SQL is db-f1-micro, patched to max_connections=30 (was the
     # default 25) after that got exhausted live on 2026-08-27. Cloud Run is
@@ -14,8 +17,12 @@ engine = create_async_engine(
     # an open WebSocket, and one background agent run were enough to exhaust
     # it, so a scheduling run's own state-save timed out waiting for a
     # connection and silently died mid-loop (observed live same day).
-    pool_size=8,
-    max_overflow=4,
+    pool_size=20,
+    max_overflow=10,
+    # Never wait the default 30s for a connection. Something holding the pool
+    # long enough to queue for half a minute is a bug, and a fast failure names
+    # it instead of making unrelated pages look broken.
+    pool_timeout=10,
 )
 
 AsyncSessionLocal = async_sessionmaker(

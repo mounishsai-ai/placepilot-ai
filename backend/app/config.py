@@ -6,6 +6,7 @@ import os
 class Settings(BaseSettings):
     APP_NAME: str = "PlacePilot AI"
     APP_ENV: str = "development"
+    SQL_ECHO: bool = False
     SECRET_KEY: str = "dev-secret-key-change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
