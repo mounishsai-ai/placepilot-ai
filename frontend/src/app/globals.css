@@ -74,6 +74,22 @@ body {
   overflow-x: hidden;
 }
 
+/* The surfaces below blur what is behind them, and a flat page colour blurs to
+   itself — no effect at all. This is what they refract: three wide, low-opacity
+   jade washes, fixed so they do not travel with scroll. Kept far under the
+   density where it would compete with the content sitting on top. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(58rem 40rem at 12% -8%,  rgba(15,169,104,.11), transparent 62%),
+    radial-gradient(46rem 34rem at 92% 6%,   rgba(52,216,154,.09), transparent 60%),
+    radial-gradient(60rem 42rem at 68% 108%, rgba(18,184,114,.08), transparent 64%);
+}
+
 h1, h2, h3, .display {
   font-family: 'Bricolage Grotesque', 'Inter', sans-serif;
   letter-spacing: -.03em;
@@ -99,21 +115,68 @@ h1 em, h2 em, h3 em, .hl {
   select option { background-color: var(--card); color: var(--fg); }
 
   /* ── Surfaces ──────────────────────────────────────────────────────── */
+  /* Three things together read as glass, and dropping any one of them makes
+     this look like flat translucent paint instead:
+       blur + saturate  — what is behind is softened AND its colour lifts,
+                          which is what separates glass from tracing paper
+       inset top edge   — a hairline of light along the top, the specular
+                          catch a real pane has where it meets the light
+       layered shadow   — a tight contact shadow plus a wide soft one, so the
+                          panel sits above the page rather than printed on it
+     Opacity stays high (.72) because body text sits directly on these; the
+     glass is the surface, not the subject. */
   .glass {
-    @apply bg-white border rounded-2xl;
-    border-color: var(--line);
+    @apply border rounded-2xl;
+    background: rgba(255,255,255,.72);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border-color: rgba(255,255,255,.62);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.85),
+      inset 0 -1px 0 rgba(11,23,20,.03),
+      0 1px 2px rgba(11,23,20,.04),
+      0 12px 32px -14px rgba(11,23,20,.16);
   }
   .glass-heavy {
-    @apply bg-white border rounded-2xl;
-    border-color: var(--line);
-    box-shadow: 0 4px 20px rgba(11,23,20,.06);
+    @apply border rounded-2xl;
+    background: rgba(255,255,255,.86);
+    backdrop-filter: blur(28px) saturate(190%);
+    -webkit-backdrop-filter: blur(28px) saturate(190%);
+    border-color: rgba(255,255,255,.7);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.9),
+      0 2px 6px rgba(11,23,20,.05),
+      0 18px 44px -18px rgba(11,23,20,.2);
   }
   .glass-card {
     @apply glass p-6 transition-all duration-200;
   }
   .glass-card:hover {
-    border-color: #D3DEDA;
-    box-shadow: 0 4px 18px rgba(11,23,20,.07);
+    border-color: rgba(255,255,255,.85);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.95),
+      0 2px 6px rgba(11,23,20,.05),
+      0 20px 44px -16px rgba(11,23,20,.22);
+  }
+
+  /* Safari before 18 and Firefox with backdrop-filter disabled render the
+     translucency with nothing blurred behind it, which turns readable panels
+     into washed-out ones. Give those a solid surface instead. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass, .glass-heavy {
+      background: var(--card);
+      border-color: var(--line);
+    }
+  }
+
+  /* Transparency is an accessibility setting, not only a taste one. */
+  @media (prefers-reduced-transparency: reduce) {
+    .glass, .glass-heavy {
+      background: var(--card);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-color: var(--line);
+    }
   }
 
   /* ── Glossy stat tile ────────────────────────────────────────────────
