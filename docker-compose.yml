@@ -36,7 +36,9 @@ services:
     build: ./backend
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      # The image listens on 8080 (Dockerfile sets PORT=8080); 8000 on the host
+      # is what the frontend bundle and the backend's CORS list both expect.
+      - "8000:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -47,8 +49,9 @@ services:
       UPLOAD_DIR: /app/uploads
       APP_ENV: development
     env_file:
-      # Optional -- holds GEMINI_API_KEY / Vertex settings. Compose fails if the
-      # file is missing, so copy backend/.env.example to backend/.env first.
+      # Holds GEMINI_API_KEY. Compose fails if the file is missing, so copy
+      # backend/.env.example to backend/.env first. The DATABASE_URL set above
+      # wins over anything in that file -- compose `environment` beats `env_file`.
       - backend/.env
     volumes:
       # Résumé uploads and the Chroma embedding store are the two pieces of

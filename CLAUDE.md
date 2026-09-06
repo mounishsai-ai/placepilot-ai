@@ -84,9 +84,13 @@ gcloud run deploy placement-frontend --image=us-central1-docker.pkg.dev/placemen
 `gcloud run deploy` is treated as a confirm-first action by the harness — expect
 to ask before running it, even mid-session.
 
-**Local dev:** no local Postgres/Docker on this machine. Only run the frontend
-locally, pointed at the deployed backend, on **port 3000 or 3001** (`CORS_ORIGINS`
-in `backend/app/main.py` is a fixed list):
+**Local dev:** Docker Desktop *is* installed here (an earlier note in this file
+claimed otherwise and was wrong) — `docker compose up --build` from the repo root
+brings up Postgres, API and frontend together. There is no local Postgres outside
+that.
+
+To run only the frontend against a backend elsewhere, use **port 3000 or 3001**
+(`CORS_ORIGINS` in `backend/app/main.py` is a fixed list):
 ```bash
 cd frontend && NEXT_PUBLIC_API_URL=https://placement-backend-891885517174.us-central1.run.app \
   NEXT_PUBLIC_WS_URL=wss://placement-backend-891885517174.us-central1.run.app npx next dev -p 3000
