@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     SYNC_DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/placement_db"
 
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.5-flash-lite"      # 500 RPD, 15 RPM — primary workhorse
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"      # high-volume, low-reasoning workhorse
     GEMINI_MODEL_PRO: str = "gemini-3.5-flash"           # high-quality JD analysis; gemini-3.6-flash measured ~27s/call vs ~5.7s here
     EMBEDDING_MODEL: str = "gemini-embedding-001"
 

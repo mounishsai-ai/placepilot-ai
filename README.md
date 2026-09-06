@@ -7,9 +7,8 @@ decision to a human.
 
 <!-- TODO: embed the ~90s demo video here (JD upload -> agent trace -> schedule). -->
 
-**Runs on a Gemini API key and any Postgres database** — no Google Cloud project,
-no billing account. See [Running it](#running-it); setup is three values in a
-`.env` file.
+**Runs on a Gemini API key and any Postgres database** — no Google Cloud project
+required. See [Running it](#running-it); setup is three values in a `.env` file.
 
 After seeding, sign in as any of these (the sign-in page fills them in for you):
 
@@ -161,8 +160,13 @@ what the agent actually did.
 ## Running it
 
 You need two things: **a Postgres database** and **a Gemini API key** from
-[aistudio.google.com/apikey](https://aistudio.google.com/apikey) (free, no billing
-account). Any Postgres 14+ works — local, or a free hosted one.
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) — free to create,
+no card required. Any Postgres 14+ works, local or hosted.
+
+The free tier's limits are tight, and Google no longer publishes them — you can
+see yours at [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).
+One drive end to end is comfortably within them; running several back to back
+will likely want billing enabled on the key.
 
 The app also runs with no key at all: embeddings fall back to TF-IDF and the
 LLM-dependent features degrade rather than crash. The agent loops need one to do
