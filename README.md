@@ -5,7 +5,7 @@ job description through candidate screening to a conflict-free interview schedul
 choosing their own tools at each step, and stopping to hand every irreversible
 decision to a human.
 
-<!-- TODO: embed the ~90s demo video here (JD upload -> agent trace -> schedule). -->
+https://github.com/user-attachments/assets/dd5be754-1e0c-4be5-a91e-183d7a670204
 
 **Runs on a Gemini API key and any Postgres database** — no Google Cloud project
 required. See [Running it](#running-it); setup is three values in a `.env` file.
@@ -26,7 +26,7 @@ The seed data is generated fixtures, not real student records — see
 
 ## What this actually is
 
-A working system, built solo as a college project. It is not production
+A working system, built as a college project. It is not production
 software for a real placement cell, and the
 [Limitations](#what-this-does-not-solve) section says plainly where that line falls.
 
@@ -293,9 +293,8 @@ storage; this was not worth doing for a demo.
 a column to an existing one. Schema changes against a live database currently require
 a manual `ALTER TABLE`. Alembic is the correct fix and is not wired up.
 
-**Not load tested.** Every path here has been exercised by hand, by one person.
-No concurrency testing, no load profile, no idea where it breaks under real
-simultaneous use.
+**Not load tested.** Every path here has been exercised by hand. No concurrency
+testing, no load profile, no idea where it breaks under real simultaneous use.
 
 ---
 
@@ -329,5 +328,4 @@ frontend/src/
 
 ## Author
 
-Built by **N. Mounish Sai** — design, backend, agent architecture and
-frontend. Solo project.
+Built by **N. Mounish Sai** — design, backend, agent architecture and frontend.
